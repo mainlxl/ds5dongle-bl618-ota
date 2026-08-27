@@ -165,9 +165,23 @@ jobs:
           dist_stem="ds5dongle-lctech616-${RELEASE_TAG}${speed_suffix}"
 
           cp "${src_dir}/${src_stem}.bin" "${dist_dir}/${dist_stem}.bin"
-          cp "${src_dir}/${src_stem}.bin.ota" "${dist_dir}/${dist_stem}.bin.ota"
-          if [[ -f "${src_dir}/${src_stem}.xz.ota" ]]; then
-            cp "${src_dir}/${src_stem}.xz.ota" "${dist_dir}/${dist_stem}.xz.ota"
+          ota_src="${src_dir}/${src_stem}.bin.ota"
+          if [[ ! -f "$ota_src" ]]; then
+            ota_src="build/build_out/ds5dongle_bl618_bl616.bin.ota"
+          fi
+          if [[ ! -f "$ota_src" ]]; then
+            echo "OTA package not found for ${USB_SPEED} build." >&2
+            find build/build_out "${src_dir}" -maxdepth 1 -type f | sort >&2
+            exit 1
+          fi
+          cp "$ota_src" "${dist_dir}/${dist_stem}.bin.ota"
+
+          xz_ota_src="${src_dir}/${src_stem}.xz.ota"
+          if [[ ! -f "$xz_ota_src" ]]; then
+            xz_ota_src="build/build_out/ds5dongle_bl618_bl616.xz.ota"
+          fi
+          if [[ -f "$xz_ota_src" ]]; then
+            cp "$xz_ota_src" "${dist_dir}/${dist_stem}.xz.ota"
           fi
 
           cp "${src_dir}"/boot2_*.bin "$dist_dir/"
