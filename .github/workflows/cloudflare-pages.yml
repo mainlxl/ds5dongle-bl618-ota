@@ -12,15 +12,37 @@ on:
 jobs:
   deploy:
     name: Deploy Web OTA
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check Cloudflare deploy secrets
+        id: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare secrets are not configured; skip Pages deploy."
+          fi
+
+      - name: Build static Web OTA shell
+        if: steps.cloudflare.outputs.enabled == 'true'
+        env:
+          WEB_OTA_OUTPUT_DIR: web-ota-static
+          WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
+          WEB_OTA_KEEP_RELEASES: "100"
+        run: |
+          node tools/build-web-ota-static.mjs
+
       - name: Deploy to Cloudflare Pages
+        if: steps.cloudflare.outputs.enabled == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web-ota --project-name ds5dongle-ota
+          command: pages deploy web-ota-static --project-name ds5dongle-ota --commit-dirty=true

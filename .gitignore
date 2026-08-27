@@ -1,5 +1,6 @@
 build/
 dist/
+web-ota-static/
 tools/ota-updater/target/
 bouffalo_sdk_ds5/
 *.o

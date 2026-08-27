@@ -320,7 +320,7 @@
         <header>
           <div>
             <h1>DS5Dongle OTA 更新</h1>
-            <p class="subtitle">Cloudflare 同源下载 + WebHID OTA 写入</p>
+        <p class="subtitle">Cloudflare 静态文件下载 + WebHID OTA 写入</p>
             <nav class="links">
               <a href="https://github.com/mainlxl/ds5dongle-bl618-ota" target="_blank" rel="noreferrer">GitHub 地址</a>
               <a href="https://github.com/sqlCRT/ds5dongle-bl618-opensource" target="_blank" rel="noreferrer">原作者地址</a>
@@ -335,7 +335,7 @@
           <div class="grid">
             <label class="field">
               <span class="label">Release 仓库</span>
-              <input id="repo" value="mainlxl/ds5dongle-bl618-ota" spellcheck="false">
+              <input id="repo" value="mainlxl/ds5dongle-bl618-ota" spellcheck="false" readonly>
             </label>
 
             <label class="field">
@@ -400,6 +400,7 @@
       const OTA_CMD_FINISH = 0x12;
       const OTA_CMD_ABORT = 0x13;
       const OTA_CHUNK_SIZE = 59;
+      const MANIFEST_URL = "manifest.json";
 
       const OTA_STATUS = {
         0: "空闲",
@@ -692,34 +693,25 @@
       }
 
       async function loadLatestRelease() {
-        const repo = normalizeRepo(els.repo.value);
-        const speed = els.speed.value;
         setStatus("正在检查 Release...");
-        const response = await fetch(`/api/latest?repo=${encodeURIComponent(repo)}&speed=${encodeURIComponent(speed)}`, {
+        const response = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, {
           cache: "no-store",
         });
         const data = await response.json().catch(() => null);
         if (!response.ok) {
-          throw new Error(data?.error || `检查 Release 失败：HTTP ${response.status}`);
+          throw new Error(data?.error || `读取 OTA 清单失败：HTTP ${response.status}`);
         }
-        state.release = data;
-        els.latestVersion.textContent = data.tag_name || "-";
+        const release = data?.releases?.[0];
+        if (!release?.tag_name || !Array.isArray(release.assets)) {
+          throw new Error("OTA 清单为空或格式不正确");
+        }
+        state.release = release;
+        els.repo.value = data.repo || "mainlxl/ds5dongle-bl618-ota";
+        els.latestVersion.textContent = release.tag_name || "-";
         updateSelectedAsset();
         setStatus("OTA 源已就绪");
-        log(`最新 Release：${data.tag_name}`, "success");
+        log(`最新 Release：${release.tag_name}`, "success");
         updateButtons();
-      }
-
-      function normalizeRepo(value) {
-        const repo = value
-          .trim()
-          .replace(/^https:\/\/github\.com\//, "")
-          .replace(/\/$/, "")
-          .replace(/\.git$/, "");
-        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
-          throw new Error("仓库格式应为 owner/name");
-        }
-        return repo;
       }
 
       function updateSelectedAsset() {
@@ -955,9 +947,6 @@
       });
       els.speed.addEventListener("change", () => {
         updateSelectedAsset();
-        if (state.release) {
-          loadLatestRelease().catch((error) => log(`错误：${error.message}`, "error"));
-        }
       });
 
       if ("hid" in navigator) {

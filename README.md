@@ -45,4 +45,4 @@ tools/ota-updater/package-macos.sh
 
 ## Web OTA
 
-`web-ota/` 是 Cloudflare Pages 版 WebHID OTA 页面。页面通过同源 Pages Function 代理 GitHub Release 查询和附件下载，避免浏览器直接读取 GitHub Release 附件时遇到 CORS 问题。
+`web-ota/` 是 Cloudflare Pages 静态版 WebHID OTA 页面。固件同步 Action 会把 `.bin.ota` 和 SHA256 文件上传到 Cloudflare，并生成 `manifest.json`。网页运行时只读取同源静态文件，不调用 GitHub API，也不代理 GitHub Release 附件。

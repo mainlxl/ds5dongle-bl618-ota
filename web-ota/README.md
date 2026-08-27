@@ -1,13 +1,13 @@
 # DS5Dongle Web OTA
 
-Cloudflare Pages 版 WebHID OTA 工具。
+Cloudflare Pages 静态版 WebHID OTA 工具。
 
-运行时前端是 `index.html`，Release 查询和固件下载走 Cloudflare Pages `_worker.js`：
+运行时前端是 `index.html`。固件同步 Action 发布新版本后，会把 OTA 文件和 `manifest.json` 一起上传到 Cloudflare Pages：
 
-- `/api/latest`：通过 GitHub `/releases/latest` 跳转解析最新 tag，不使用 GitHub API。
-- `/api/download`：由 Cloudflare 服务端代理下载 GitHub Release 附件，浏览器只访问同源地址。
+- `manifest.json`：记录最新版本和保留的历史版本。
+- `releases/<tag>/...`：保存 `.bin.ota` 和 SHA256 校验文件。
 
-这样可以避开浏览器直接 `fetch` GitHub Release 附件时遇到的 CORS 限制。
+网页运行时只读取 Cloudflare 同源静态文件，不调用 GitHub API，也不通过 Worker 代理 GitHub Release 附件。
 
 ## 本地测试
 
@@ -18,7 +18,8 @@ npm test --prefix web-ota
 ## Cloudflare Pages 部署
 
 ```bash
-npx wrangler pages deploy web-ota --project-name ds5dongle-ota
+RELEASE_TAG=v3.18 RELEASE_ASSETS_DIR=/path/to/release-assets node tools/build-web-ota-static.mjs
+npx wrangler pages deploy web-ota-static --project-name ds5dongle-ota
 ```
 
 需要环境变量：
@@ -27,3 +28,5 @@ npx wrangler pages deploy web-ota --project-name ds5dongle-ota
 CLOUDFLARE_API_TOKEN=...
 CLOUDFLARE_ACCOUNT_ID=...
 ```
+
+默认只保留最新 100 个版本，可用 `WEB_OTA_KEEP_RELEASES` 调整。
