@@ -335,3 +335,79 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy web-ota-static --project-name ds5dongle-ota --commit-dirty=true
+
+  sync-cloudflare:
+    name: Repair Cloudflare static OTA
+    needs: prepare
+    if: needs.prepare.outputs.release_needed == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout OTA overlay
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.release_commit }}
+
+      - name: Check Cloudflare deploy secrets
+        id: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare secrets are not configured; skip Pages repair."
+          fi
+
+      - name: Check deployed manifest
+        id: manifest
+        if: steps.cloudflare.outputs.enabled == 'true'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
+        run: |
+          set -euo pipefail
+          manifest="$(curl -fsS "${WEB_OTA_SITE_URL}/manifest.json?t=$(date +%s)" || true)"
+          deployed_latest="$(printf '%s' "$manifest" | node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { try { process.stdout.write(JSON.parse(s).latest || ""); } catch { process.stdout.write(""); } });')"
+          if [[ "$deployed_latest" == "$RELEASE_TAG" ]]; then
+            echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare manifest already points to ${RELEASE_TAG}."
+          else
+            echo "sync_needed=true" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare manifest latest is '${deployed_latest}', need ${RELEASE_TAG}."
+          fi
+
+      - name: Download release OTA assets
+        if: steps.manifest.outputs.sync_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mkdir -p release-assets
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "*.bin.ota" \
+            --pattern "SHA256SUMS-*.txt" \
+            --dir release-assets
+
+      - name: Build static Web OTA assets
+        if: steps.manifest.outputs.sync_needed == 'true'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_ASSETS_DIR: release-assets
+          WEB_OTA_OUTPUT_DIR: web-ota-static
+          WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
+          WEB_OTA_KEEP_RELEASES: "100"
+        run: |
+          node tools/build-web-ota-static.mjs
+
+      - name: Deploy static Web OTA to Cloudflare Pages
+        if: steps.manifest.outputs.sync_needed == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web-ota-static --project-name ds5dongle-ota --commit-dirty=true
