@@ -1,0 +1,15 @@
+build/
+dist/
+tools/ota-updater/target/
+bouffalo_sdk_ds5/
+*.o
+*.a
+*.elf
+*.map
+*.bin
+*.ota
+*.xz.ota
+*.tar.gz
+*.zip
+.DS_Store
+*.code-workspace

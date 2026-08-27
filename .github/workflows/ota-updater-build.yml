@@ -1,0 +1,64 @@
+name: OTA Updater Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - 'codex/**'
+    paths:
+      - 'tools/ota-updater/**'
+      - '.github/workflows/ota-updater-build.yml'
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+          - ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libxkbcommon-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release --manifest-path tools/ota-updater/Cargo.toml
+
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        run: tools/ota-updater/package-macos.sh tools/ota-updater/dist
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ds5dongle-ota-updater-macOS
+          path: tools/ota-updater/dist/ds5dongle-ota-updater-macOS.app.zip
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ds5dongle-ota-updater-Linux
+          path: tools/ota-updater/target/release/ds5dongle-ota-updater
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ds5dongle-ota-updater-Windows
+          path: tools/ota-updater/target/release/ds5dongle-ota-updater.exe

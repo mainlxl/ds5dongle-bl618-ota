@@ -1,0 +1,291 @@
+name: Build OTA Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/build-ota-release.yml"
+      - "patches/**"
+      - "tools/apply-ota-patches.sh"
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-ota-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: sqlCRT/ds5dongle-bl618-opensource
+
+jobs:
+  prepare:
+    name: Check upstream release
+    runs-on: ubuntu-latest
+    outputs:
+      release_needed: ${{ steps.prepare.outputs.release_needed }}
+      release_commit: ${{ steps.prepare.outputs.release_commit }}
+      release_name: ${{ steps.prepare.outputs.release_name }}
+      safe_tag: ${{ steps.prepare.outputs.safe_tag }}
+      tag: ${{ steps.prepare.outputs.tag }}
+
+    steps:
+      - name: Checkout OTA overlay
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve upstream release
+        id: prepare
+        run: |
+          set -euo pipefail
+
+          latest_location="$(curl -fsSI "https://github.com/${UPSTREAM_REPO}/releases/latest" \
+            | awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }')"
+          tag="${latest_location##*/}"
+          if [[ -z "$tag" || "$tag" == "latest" || "$latest_location" != *"/releases/tag/"* ]]; then
+            echo "Could not resolve upstream latest release tag from ${latest_location}."
+            exit 1
+          fi
+
+          safe_tag="${tag//\//-}"
+          release_name="${tag}"
+          release_commit="$(git rev-parse HEAD)"
+
+          own_code="$(curl -LsS -o /dev/null -w "%{http_code}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}")"
+          if [[ "$own_code" == "200" ]]; then
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+            echo "release_commit=${release_commit}" >> "$GITHUB_OUTPUT"
+            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+            echo "safe_tag=${safe_tag}" >> "$GITHUB_OUTPUT"
+            echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
+            echo "Release ${tag} already exists in ${GITHUB_REPOSITORY}; nothing to do."
+            exit 0
+          fi
+          if [[ "$own_code" != "404" ]]; then
+            echo "Unexpected status when checking own release page: HTTP ${own_code}"
+            exit 1
+          fi
+
+          {
+            echo "release_needed=true"
+            echo "release_commit=${release_commit}"
+            echo "tag=${tag}"
+            echo "safe_tag=${safe_tag}"
+            echo "release_name=${release_name}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Will build ${tag} from upstream ${UPSTREAM_REPO} with OTA overlay ${release_commit}."
+
+  build:
+    name: Build LCTech BL616 (${{ matrix.usb_speed }})
+    needs: prepare
+    if: needs.prepare.outputs.release_needed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        usb_speed:
+          - fs
+          - hs
+
+    steps:
+      - name: Checkout OTA overlay
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.release_commit }}
+          path: ota-overlay
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates \
+            cmake \
+            git \
+            make \
+            ninja-build \
+            python3 \
+            xz-utils \
+            zip
+
+      - name: Checkout upstream source
+        env:
+          UPSTREAM_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          git clone --depth 1 --branch "${UPSTREAM_TAG}" --recursive \
+            "https://github.com/${UPSTREAM_REPO}.git" upstream-src
+
+      - name: Apply OTA patch
+        run: |
+          bash ota-overlay/tools/apply-ota-patches.sh upstream-src patches/ota
+
+      - name: Checkout Bouffalo SDK fork
+        run: |
+          git clone --depth 1 --recursive https://github.com/sqlCRT/bouffalo_sdk.git bouffalo_sdk
+
+      - name: Checkout T-Head toolchain
+        run: |
+          git clone --depth 1 https://github.com/bouffalolab/toolchain_gcc_t-head_linux.git toolchain_gcc_t-head_linux
+          chmod -R a+x toolchain_gcc_t-head_linux/bin
+          echo "$GITHUB_WORKSPACE/toolchain_gcc_t-head_linux/bin" >> "$GITHUB_PATH"
+
+      - name: Build firmware
+        working-directory: upstream-src
+        env:
+          BL_SDK_BASE: ${{ github.workspace }}/bouffalo_sdk
+          BOARD_TYPE: lctech616
+          USB_SPEED: ${{ matrix.usb_speed }}
+        run: |
+          bash build_macos.sh rebuild
+
+      - name: Package release assets
+        working-directory: upstream-src
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.safe_tag }}
+          USB_SPEED: ${{ matrix.usb_speed }}
+        run: |
+          set -euo pipefail
+          src_dir="firmware/lctech616"
+          dist_dir="${GITHUB_WORKSPACE}/dist/lctech616"
+          mkdir -p "$dist_dir"
+
+          speed_suffix=""
+          if [[ "$USB_SPEED" == "hs" ]]; then
+            speed_suffix="-hs"
+          fi
+
+          src_stem="ds5dongle-lctech616${speed_suffix}"
+          dist_stem="ds5dongle-lctech616-${RELEASE_TAG}${speed_suffix}"
+
+          cp "${src_dir}/${src_stem}.bin" "${dist_dir}/${dist_stem}.bin"
+          cp "${src_dir}/${src_stem}.bin.ota" "${dist_dir}/${dist_stem}.bin.ota"
+          if [[ -f "${src_dir}/${src_stem}.xz.ota" ]]; then
+            cp "${src_dir}/${src_stem}.xz.ota" "${dist_dir}/${dist_stem}.xz.ota"
+          fi
+
+          cp "${src_dir}"/boot2_*.bin "$dist_dir/"
+          cp "${src_dir}/partition.bin" "$dist_dir/"
+          if [[ -f "${src_dir}/partition_cfg_4M_nosec.toml" ]]; then
+            cp "${src_dir}/partition_cfg_4M_nosec.toml" "$dist_dir/"
+          fi
+          awk -v fw="./${dist_stem}.bin" '
+            /^\[/ { in_fw = ($0 == "[FW]") }
+            in_fw && /^filedir = / { $0 = "filedir = " fw }
+            { print }
+          ' "${src_dir}/flash_prog_cfg.ini" > "${dist_dir}/flash_prog_cfg.ini"
+
+          cd "$dist_dir"
+          files=(
+            "${dist_stem}.bin"
+            "${dist_stem}.bin.ota"
+            partition.bin
+            flash_prog_cfg.ini
+          )
+          shopt -s nullglob
+          files+=(
+            "${dist_stem}.xz.ota"
+            boot2_*.bin
+            partition_cfg_4M_nosec.toml
+          )
+          sha256sum "${files[@]}" > "SHA256SUMS-${RELEASE_TAG}-${USB_SPEED}.txt"
+          zip -9 "${dist_stem}.flash.zip" "${files[@]}"
+
+      - name: Upload release asset bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-lctech616-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.usb_speed }}
+          path: |
+            dist/lctech616/ds5dongle-lctech616-*.bin
+            dist/lctech616/ds5dongle-lctech616-*.bin.ota
+            dist/lctech616/ds5dongle-lctech616-*.xz.ota
+            dist/lctech616/ds5dongle-lctech616-*.flash.zip
+            dist/lctech616/SHA256SUMS-*.txt
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs:
+      - prepare
+      - build
+    if: needs.prepare.outputs.release_needed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout OTA overlay
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.release_commit }}
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: release-lctech616-${{ needs.prepare.outputs.safe_tag }}-*
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_NAME: ${{ needs.prepare.outputs.release_name }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+
+          own_code="$(curl -LsS -o /dev/null -w "%{http_code}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}")"
+          if [[ "$own_code" == "200" ]]; then
+            echo "Release ${RELEASE_TAG} already exists; skip publish."
+            exit 0
+          fi
+          if [[ "$own_code" != "404" ]]; then
+            echo "Unexpected status when checking own release page: HTTP ${own_code}"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            tag_commit="$(git rev-list -n 1 "${RELEASE_TAG}")"
+            if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
+              git tag -fa "${RELEASE_TAG}" "${RELEASE_COMMIT}" -m "Release ${RELEASE_TAG}"
+              git push --force origin "refs/tags/${RELEASE_TAG}"
+            fi
+          else
+            git tag -a "${RELEASE_TAG}" "${RELEASE_COMMIT}" -m "Release ${RELEASE_TAG}"
+            git push origin "refs/tags/${RELEASE_TAG}"
+          fi
+
+          upstream_notes="/tmp/upstream-release-notes.md"
+          if ! gh release view "${RELEASE_TAG}" --repo "${UPSTREAM_REPO}" --json body --jq '.body' > "${upstream_notes}"; then
+            echo "未能读取上游 Release 说明。" > "${upstream_notes}"
+          fi
+
+          cat > /tmp/release-notes.md <<EOF
+          同步自上游 Release \`${UPSTREAM_REPO}@${RELEASE_TAG}\`。
+
+          上游仓库：https://github.com/${UPSTREAM_REPO}
+          上游 Release：https://github.com/${UPSTREAM_REPO}/releases/tag/${RELEASE_TAG}
+
+          本仓库没有保存上游源码；此 Release 由 GitHub Actions 临时拉取上游 tag、应用 \`patches/ota\` 后编译生成。
+
+          附件包含 Full-Speed / High-Speed 固件、OTA 包、DevCube 刷机 zip 和 SHA256 校验文件。
+
+          ## 上游 Release 说明
+          EOF
+          cat "${upstream_notes}" >> /tmp/release-notes.md
+
+          mapfile -t assets < <(find release-assets -type f | sort)
+          gh release create "${RELEASE_TAG}" "${assets[@]}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${RELEASE_COMMIT}" \
+            --title "${RELEASE_NAME}" \
+            --notes-file /tmp/release-notes.md
