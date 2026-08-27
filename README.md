@@ -7,6 +7,7 @@
 - OTA 补丁：`patches/ota/`
 - 补丁应用脚本：`tools/apply-ota-patches.sh`
 - 桌面 OTA 工具：`tools/ota-updater/`
+- Cloudflare Web OTA：`web-ota/`
 
 ## 自动发布
 
@@ -41,3 +42,7 @@ macOS 本地打包：
 cargo build --release --manifest-path tools/ota-updater/Cargo.toml
 tools/ota-updater/package-macos.sh
 ```
+
+## Web OTA
+
+`web-ota/` 是 Cloudflare Pages 版 WebHID OTA 页面。页面通过同源 Pages Function 代理 GitHub Release 查询和附件下载，避免浏览器直接读取 GitHub Release 附件时遇到 CORS 问题。

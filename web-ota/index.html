@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DS5Dongle OTA 更新</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7f7;
+        --panel: #ffffff;
+        --ink: #172126;
+        --muted: #66757c;
+        --line: #d4dde1;
+        --accent: #0f766e;
+        --accent-dark: #115e59;
+        --danger: #b42318;
+        --warn: #a16207;
+        --ok: #15803d;
+        --track: #e5ecef;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(1120px, calc(100% - 32px));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 28px 0;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 20px 54px rgba(27, 39, 45, 0.1);
+      }
+
+      header,
+      .body {
+        padding: 24px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        align-items: start;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.9rem;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      a {
+        color: var(--accent);
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      a:hover {
+        color: var(--accent-dark);
+        text-decoration: underline;
+      }
+
+      .status-pill {
+        min-width: 220px;
+        max-width: 360px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        color: var(--muted);
+        background: #fafcfc;
+        text-align: right;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 180px;
+        gap: 14px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field.wide {
+        grid-column: 1 / -1;
+      }
+
+      .label,
+      .facts span {
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+
+      input,
+      select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0 12px;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      input[type="file"] {
+        padding: 8px 12px;
+      }
+
+      input:focus,
+      select:focus,
+      button:focus-visible {
+        outline: 3px solid rgba(15, 118, 110, 0.22);
+        outline-offset: 2px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 18px 0;
+      }
+
+      button {
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0 14px;
+        color: var(--ink);
+        background: #fff;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        color: #fff;
+        background: var(--accent);
+      }
+
+      button.primary:hover:not(:disabled) {
+        background: var(--accent-dark);
+      }
+
+      button.danger {
+        color: var(--danger);
+      }
+
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--line);
+      }
+
+      .facts div {
+        min-width: 0;
+        padding: 14px;
+        background: #fbfcfc;
+      }
+
+      .facts strong {
+        display: block;
+        min-height: 22px;
+        margin-top: 5px;
+        overflow-wrap: anywhere;
+        font-size: 0.95rem;
+      }
+
+      .progress {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        margin: 22px 0;
+      }
+
+      .track {
+        height: 12px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--track);
+      }
+
+      .bar {
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--accent), #4b8c6f);
+        transition: width 160ms ease;
+      }
+
+      .progress-text {
+        min-width: 132px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      .log {
+        min-height: 190px;
+        max-height: 300px;
+        margin: 0;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        color: #2f3b41;
+        background: #f9fbfb;
+        white-space: pre-wrap;
+      }
+
+      .log-line {
+        display: block;
+      }
+
+      .log-line.error {
+        color: var(--danger);
+        font-weight: 700;
+      }
+
+      .log-line.warn {
+        color: var(--warn);
+      }
+
+      .log-line.success {
+        color: var(--ok);
+        font-weight: 700;
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100% - 20px, 1120px);
+          padding: 10px 0;
+        }
+
+        header,
+        .body,
+        .grid,
+        .progress {
+          grid-template-columns: 1fr;
+        }
+
+        header,
+        .body {
+          padding: 18px;
+        }
+
+        .status-pill {
+          max-width: none;
+          text-align: left;
+        }
+
+        .facts {
+          grid-template-columns: 1fr;
+        }
+
+        .actions button {
+          flex: 1 1 140px;
+        }
+
+        .progress-text {
+          min-width: 0;
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <header>
+          <div>
+            <h1>DS5Dongle OTA 更新</h1>
+            <p class="subtitle">Cloudflare 同源下载 + WebHID OTA 写入</p>
+            <nav class="links">
+              <a href="https://github.com/mainlxl/ds5dongle-bl618-ota" target="_blank" rel="noreferrer">GitHub 地址</a>
+              <a href="https://github.com/sqlCRT/ds5dongle-bl618-opensource" target="_blank" rel="noreferrer">原作者地址</a>
+              <a href="https://ps5.ds5678.top/" target="_blank" rel="noreferrer">原作者设置页</a>
+              <a href="https://github.com/mainlxl/ds5dongle-bl618-ota/tree/master/web-ota" target="_blank" rel="noreferrer">工具地址</a>
+            </nav>
+          </div>
+          <div class="status-pill" id="status-text">页面已加载</div>
+        </header>
+
+        <div class="body">
+          <div class="grid">
+            <label class="field">
+              <span class="label">Release 仓库</span>
+              <input id="repo" value="mainlxl/ds5dongle-bl618-ota" spellcheck="false">
+            </label>
+
+            <label class="field">
+              <span class="label">固件类型</span>
+              <select id="speed">
+                <option value="hs">High-Speed</option>
+                <option value="fs">Full-Speed</option>
+              </select>
+            </label>
+
+            <label class="field wide">
+              <span class="label">本地 OTA 包</span>
+              <input id="local-file" type="file" accept=".ota,.bin.ota,application/octet-stream">
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="connect" type="button">连接设备</button>
+            <button id="read-version" type="button">读取版本</button>
+            <button id="refresh-release" type="button">检查最新 Release</button>
+            <button id="start-update" class="primary" type="button">开始 OTA</button>
+            <button id="abort-update" class="danger" type="button">中止</button>
+          </div>
+
+          <div class="facts">
+            <div>
+              <span>设备</span>
+              <strong id="device-name">-</strong>
+            </div>
+            <div>
+              <span>当前版本</span>
+              <strong id="current-version">-</strong>
+            </div>
+            <div>
+              <span>最新版本</span>
+              <strong id="latest-version">-</strong>
+            </div>
+            <div>
+              <span>升级包</span>
+              <strong id="selected-asset">-</strong>
+            </div>
+          </div>
+
+          <div class="progress">
+            <div class="track">
+              <div id="progress-bar" class="bar"></div>
+            </div>
+            <div id="progress-text" class="progress-text">0%</div>
+          </div>
+
+          <div id="log" class="log" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const REPORT_ID_CONFIG = 0xf6;
+      const REPORT_ID_VERSION = 0xf8;
+      const REPORT_ID_STATUS = 0xf9;
+      const OTA_CMD_START = 0x10;
+      const OTA_CMD_DATA = 0x11;
+      const OTA_CMD_FINISH = 0x12;
+      const OTA_CMD_ABORT = 0x13;
+      const OTA_CHUNK_SIZE = 59;
+
+      const OTA_STATUS = {
+        0: "空闲",
+        1: "接收中",
+        2: "校验中",
+        3: "完成",
+        224: "通用错误",
+        225: "校验错误",
+        226: "签名错误",
+        227: "设备错误",
+        228: "固件镜像错误",
+        255: "错误",
+      };
+
+      const OTA_ERROR_DETAIL = {
+        0: "无",
+        1: "查找 OTA 分区失败",
+        2: "读取活动分区表失败",
+        3: "读取 FW 分区项失败",
+        4: "切换启动分区失败",
+        5: "OTA 包头 magic 不正确",
+        6: "OTA 包类型不是 RAW",
+        7: "OTA 包大小不正确",
+        8: "固件超过分区容量",
+        9: "擦除 flash 失败",
+        10: "写入 flash 失败",
+        11: "读回 flash 失败",
+        12: "写后读回内容不一致",
+        13: "payload 数据超出声明大小",
+        14: "payload 不是 BFNP 固件镜像",
+        15: "SHA 初始化失败",
+        16: "SHA 计算失败",
+        17: "SHA 收尾失败",
+        18: "最终 SHA 不一致",
+        19: "OTA 包太小",
+        20: "OTA 包接收不完整",
+        21: "flash 写入不完整",
+        22: "OTA 数据包序号不连续",
+        23: "OTA 命令长度不正确",
+      };
+
+      const state = {
+        device: null,
+        release: null,
+        localFile: null,
+        currentVersion: "",
+        previousVersion: "",
+        updating: false,
+        abortRequested: false,
+      };
+
+      const $ = (selector) => document.querySelector(selector);
+      const els = {
+        repo: $("#repo"),
+        localFile: $("#local-file"),
+        speed: $("#speed"),
+        connect: $("#connect"),
+        readVersion: $("#read-version"),
+        refreshRelease: $("#refresh-release"),
+        startUpdate: $("#start-update"),
+        abortUpdate: $("#abort-update"),
+        deviceName: $("#device-name"),
+        currentVersion: $("#current-version"),
+        latestVersion: $("#latest-version"),
+        selectedAsset: $("#selected-asset"),
+        statusText: $("#status-text"),
+        progressText: $("#progress-text"),
+        progressBar: $("#progress-bar"),
+        log: $("#log"),
+      };
+
+      function log(message, type = "info") {
+        const time = new Date().toLocaleTimeString();
+        const line = document.createElement("span");
+        line.className = `log-line ${type}`;
+        line.textContent = `[${time}] ${message}`;
+        els.log.prepend(line);
+
+        while (els.log.childElementCount > 200 || els.log.textContent.length > 6000) {
+          els.log.lastElementChild?.remove();
+        }
+      }
+
+      function setStatus(message) {
+        els.statusText.textContent = message;
+      }
+
+      function setProgress(received, total) {
+        const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+        els.progressBar.style.width = `${pct}%`;
+        els.progressText.textContent = total > 0
+          ? `${pct}%  ${formatBytes(received)} / ${formatBytes(total)}`
+          : "0%";
+      }
+
+      function formatBytes(value) {
+        if (value >= 1024 * 1024) {
+          return `${(value / 1024 / 1024).toFixed(2)} MB`;
+        }
+        if (value >= 1024) {
+          return `${(value / 1024).toFixed(1)} KB`;
+        }
+        return `${value} B`;
+      }
+
+      function formatHex32(value) {
+        return `0x${(value >>> 0).toString(16).padStart(8, "0")}`;
+      }
+
+      function readUint32LE(bytes, offset) {
+        return (
+          bytes[offset] |
+          (bytes[offset + 1] << 8) |
+          (bytes[offset + 2] << 16) |
+          (bytes[offset + 3] << 24)
+        ) >>> 0;
+      }
+
+      function writeUint32LE(bytes, offset, value) {
+        bytes[offset] = value & 0xff;
+        bytes[offset + 1] = (value >>> 8) & 0xff;
+        bytes[offset + 2] = (value >>> 16) & 0xff;
+        bytes[offset + 3] = (value >>> 24) & 0xff;
+      }
+
+      function reportPayload(dataView, reportId) {
+        const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
+        if (bytes.length > 0 && bytes[0] === reportId) {
+          return bytes.slice(1);
+        }
+        return bytes;
+      }
+
+      function parseFirmwareVersion(dataView) {
+        const payload = reportPayload(dataView, REPORT_ID_VERSION);
+        const end = payload.indexOf(0);
+        const versionBytes = end >= 0 ? payload.slice(0, end) : payload;
+        return new TextDecoder().decode(versionBytes).trim();
+      }
+
+      function parseOtaStatus(dataView) {
+        const payload = reportPayload(dataView, REPORT_ID_STATUS);
+        const status = payload[2] ?? 0;
+        const received = payload.length >= 7 ? readUint32LE(payload, 3) : 0;
+        const total = payload.length >= 11 ? readUint32LE(payload, 7) : 0;
+        const errorDetail = payload.length >= 14 ? payload[13] : 0;
+        const errorAddress = payload.length >= 18 ? readUint32LE(payload, 14) : 0;
+        const payloadFlushed = payload.length >= 22 ? readUint32LE(payload, 18) : 0;
+        return {
+          status,
+          label: OTA_STATUS[status] || `状态 ${status}`,
+          received,
+          total,
+          errorDetail,
+          errorLabel: OTA_ERROR_DETAIL[errorDetail] || `错误细节 ${errorDetail}`,
+          errorAddress,
+          payloadFlushed,
+        };
+      }
+
+      function inferSpeedFromVersion(version) {
+        return /\dH($|[^A-Za-z0-9])/i.test(`${version} `) || /-hs\b/i.test(version)
+          ? "hs"
+          : "fs";
+      }
+
+      function parseSha256Sums(text) {
+        const sums = new Map();
+        for (const line of text.split(/\r?\n/)) {
+          const match = line.match(/^([a-f0-9]{64})\s+\*?(.+)$/i);
+          if (match) {
+            sums.set(match[2].trim(), match[1].toLowerCase());
+          }
+        }
+        return sums;
+      }
+
+      function bytesToHex(bytes) {
+        return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      }
+
+      async function sha256Hex(bytes) {
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        return bytesToHex(new Uint8Array(digest));
+      }
+
+      function selectReleaseAsset(release, speed) {
+        const tag = release.tag_name || "";
+        const safeTag = tag.replaceAll("/", "-");
+        const suffix = speed === "hs" ? "-hs" : "";
+        const exactName = `ds5dongle-lctech616-${safeTag}${suffix}.bin.ota`;
+        const exact = release.assets?.find((asset) => asset.name === exactName);
+        if (exact) {
+          return exact;
+        }
+        return release.assets?.find((asset) => {
+          if (!/^ds5dongle-lctech616-.+\.bin\.ota$/i.test(asset.name)) {
+            return false;
+          }
+          return speed === "hs" ? /-hs\.bin\.ota$/i.test(asset.name) : !/-hs\.bin\.ota$/i.test(asset.name);
+        }) || null;
+      }
+
+      function selectChecksumAsset(release, speed) {
+        const tag = (release.tag_name || "").replaceAll("/", "-");
+        const exactName = `SHA256SUMS-${tag}-${speed}.txt`;
+        return release.assets?.find((asset) => asset.name === exactName) ||
+          release.assets?.find((asset) => asset.name.startsWith("SHA256SUMS-") && asset.name.endsWith(`-${speed}.txt`)) ||
+          null;
+      }
+
+      function makeStartCommand(packageSize) {
+        const command = new Uint8Array(5);
+        command[0] = OTA_CMD_START;
+        writeUint32LE(command, 1, packageSize);
+        return command;
+      }
+
+      function makeDataCommand(seq, chunk) {
+        if (chunk.length > OTA_CHUNK_SIZE) {
+          throw new RangeError(`数据块 ${chunk.length} 字节，超过最大 ${OTA_CHUNK_SIZE} 字节`);
+        }
+        const command = new Uint8Array(4 + chunk.length);
+        command[0] = OTA_CMD_DATA;
+        command[1] = seq & 0xff;
+        command[2] = (seq >>> 8) & 0xff;
+        command[3] = chunk.length;
+        command.set(chunk, 4);
+        return command;
+      }
+
+      function makeSimpleCommand(commandId) {
+        return new Uint8Array([commandId]);
+      }
+
+      function updateButtons() {
+        const connected = Boolean(state.device?.opened);
+        els.connect.disabled = state.updating;
+        els.readVersion.disabled = !connected || state.updating;
+        els.refreshRelease.disabled = state.updating;
+        els.startUpdate.disabled = !connected || (!state.release && !state.localFile) || state.updating;
+        els.abortUpdate.disabled = !connected || !state.updating;
+      }
+
+      async function connectDevice() {
+        if (!("hid" in navigator)) {
+          throw new Error("当前浏览器不支持 WebHID，请用 Chrome 或 Edge，并从 HTTPS 打开页面");
+        }
+
+        const [device] = await navigator.hid.requestDevice({
+          filters: [
+            { vendorId: 0x054c, productId: 0x0ce6 },
+            { vendorId: 0x054c, productId: 0x0df2 },
+          ],
+        });
+        if (!device) {
+          return;
+        }
+        await openSelectedDevice(device);
+        log(`已连接：${els.deviceName.textContent}`, "success");
+        await readVersion();
+        updateButtons();
+      }
+
+      async function openSelectedDevice(device) {
+        if (!device.opened) {
+          await device.open();
+        }
+        state.device = device;
+        els.deviceName.textContent = device.productName || "DS5Dongle";
+      }
+
+      async function readVersion() {
+        ensureDevice();
+        const report = await state.device.receiveFeatureReport(REPORT_ID_VERSION);
+        const version = parseFirmwareVersion(report);
+        state.currentVersion = version;
+        els.currentVersion.textContent = version || "-";
+
+        const inferred = inferSpeedFromVersion(version);
+        if (inferred) {
+          els.speed.value = inferred;
+          updateSelectedAsset();
+        }
+
+        if (state.previousVersion && version && state.previousVersion !== version) {
+          setStatus(`升级完成：${state.previousVersion} -> ${version}`);
+        }
+        log(`固件版本：${version || "未知"}`);
+      }
+
+      async function loadLatestRelease() {
+        const repo = normalizeRepo(els.repo.value);
+        const speed = els.speed.value;
+        setStatus("正在检查 Release...");
+        const response = await fetch(`/api/latest?repo=${encodeURIComponent(repo)}&speed=${encodeURIComponent(speed)}`, {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || `检查 Release 失败：HTTP ${response.status}`);
+        }
+        state.release = data;
+        els.latestVersion.textContent = data.tag_name || "-";
+        updateSelectedAsset();
+        setStatus("OTA 源已就绪");
+        log(`最新 Release：${data.tag_name}`, "success");
+        updateButtons();
+      }
+
+      function normalizeRepo(value) {
+        const repo = value
+          .trim()
+          .replace(/^https:\/\/github\.com\//, "")
+          .replace(/\/$/, "")
+          .replace(/\.git$/, "");
+        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+          throw new Error("仓库格式应为 owner/name");
+        }
+        return repo;
+      }
+
+      function updateSelectedAsset() {
+        if (state.localFile) {
+          els.selectedAsset.textContent = state.localFile.name;
+          return;
+        }
+        if (!state.release) {
+          els.selectedAsset.textContent = "-";
+          return;
+        }
+        const asset = selectReleaseAsset(state.release, els.speed.value);
+        els.selectedAsset.textContent = asset?.name || "没有找到 .bin.ota";
+      }
+
+      async function startUpdate() {
+        ensureDevice();
+
+        const speed = els.speed.value;
+        const asset = state.localFile ? null : selectReleaseAsset(state.release, speed);
+        if (!state.localFile && !asset) {
+          throw new Error(`没有找到 ${speed.toUpperCase()} 的 .bin.ota 升级包`);
+        }
+
+        state.updating = true;
+        state.abortRequested = false;
+        state.previousVersion = state.currentVersion;
+        updateButtons();
+
+        try {
+          const packageBytes = state.localFile
+            ? await readLocalPackage(state.localFile)
+            : await downloadReleasePackage(asset, speed);
+
+          setStatus("正在启动 OTA...");
+          setProgress(0, packageBytes.length);
+          log(`开始写入 OTA 包：${state.localFile?.name || asset.name}`);
+          await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeSimpleCommand(OTA_CMD_ABORT));
+          await sleep(80);
+          await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeStartCommand(packageBytes.length));
+          await sleep(150);
+          await ensureReceiveStarted(packageBytes.length);
+
+          let seq = 0;
+          for (let offset = 0; offset < packageBytes.length; offset += OTA_CHUNK_SIZE) {
+            if (state.abortRequested) {
+              await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeSimpleCommand(OTA_CMD_ABORT));
+              throw new Error("OTA 已中止");
+            }
+
+            const chunk = packageBytes.slice(offset, offset + OTA_CHUNK_SIZE);
+            await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeDataCommand(seq, chunk));
+            seq += 1;
+
+            if (seq % 32 === 0 || offset + chunk.length >= packageBytes.length) {
+              setProgress(offset + chunk.length, packageBytes.length);
+              await pollStatusOnce();
+              await sleep(2);
+            }
+          }
+
+          log("OTA 包写入成功，等待设备校验并切换分区", "success");
+          setStatus("设备正在校验...");
+          await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeSimpleCommand(OTA_CMD_FINISH));
+          await waitForCompletion();
+        } finally {
+          state.updating = false;
+          updateButtons();
+        }
+      }
+
+      async function readLocalPackage(file) {
+        setStatus("正在读取本地固件...");
+        log(`使用本地 OTA 包：${file.name}`);
+        const packageBytes = new Uint8Array(await file.arrayBuffer());
+        log(`本地固件 SHA256：${await sha256Hex(packageBytes)}`);
+        return packageBytes;
+      }
+
+      async function downloadReleasePackage(asset, speed) {
+        setStatus("正在下载固件...");
+        log(`正在下载：${asset.name}`);
+        const packageBytes = new Uint8Array(await fetchArrayBuffer(asset.browser_download_url));
+        await verifyDownloadedAsset(packageBytes, asset, speed);
+        return packageBytes;
+      }
+
+      async function fetchArrayBuffer(url) {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`下载失败：HTTP ${response.status}`);
+        }
+        return response.arrayBuffer();
+      }
+
+      async function verifyDownloadedAsset(packageBytes, asset, speed) {
+        const checksumAsset = selectChecksumAsset(state.release, speed);
+        if (!checksumAsset) {
+          log("没有找到校验文件，设备端仍会做 SHA256 校验", "warn");
+          return;
+        }
+
+        const checksumText = await fetch(checksumAsset.browser_download_url, { cache: "no-store" }).then((response) => {
+          if (!response.ok) {
+            throw new Error(`校验文件下载失败：HTTP ${response.status}`);
+          }
+          return response.text();
+        });
+        const sums = parseSha256Sums(checksumText);
+        const expected = sums.get(asset.name);
+        if (!expected) {
+          log("校验文件里没有对应条目，设备端仍会做 SHA256 校验", "warn");
+          return;
+        }
+
+        const actual = await sha256Hex(packageBytes);
+        if (actual !== expected) {
+          throw new Error("下载固件 SHA256 不匹配");
+        }
+        log("下载固件 SHA256 校验通过", "success");
+      }
+
+      async function ensureReceiveStarted(packageSize) {
+        const deadline = Date.now() + 2000;
+        let last = null;
+        while (Date.now() < deadline) {
+          last = await pollStatusOnce();
+          if (last.status === 1 && last.total === packageSize) {
+            return;
+          }
+          await sleep(100);
+        }
+        throw new Error(`设备没有进入 OTA 接收状态：${last?.label || "未知"}，接收 ${last?.received || 0} / ${last?.total || 0}`);
+      }
+
+      async function pollStatusOnce() {
+        const report = await state.device.receiveFeatureReport(REPORT_ID_STATUS);
+        const status = parseOtaStatus(report);
+        if (status.total > 0) {
+          setProgress(status.received, status.total);
+        }
+        if (status.status >= 224) {
+          const details = status.errorDetail
+            ? `；细节：${status.errorLabel}；地址：${formatHex32(status.errorAddress)}；已写入：${formatBytes(status.payloadFlushed)}`
+            : "";
+          throw new Error(`设备 OTA 失败：${status.label}${details}`);
+        }
+        return status;
+      }
+
+      async function waitForCompletion() {
+        for (let i = 0; i < 120; i += 1) {
+          const status = await pollStatusOnce();
+          setStatus(`设备状态：${status.label}`);
+          if (status.status === 3) {
+            setProgress(status.total, status.total);
+            setStatus("OTA 完成，等待设备重新连接");
+            log("OTA 完成；等待设备重新枚举并自动读取版本", "success");
+            await waitForReconnectAndReadVersion();
+            return;
+          }
+          await sleep(250);
+        }
+        throw new Error("等待 OTA 完成超时");
+      }
+
+      async function waitForReconnectAndReadVersion() {
+        state.device = null;
+        updateButtons();
+        await sleep(2000);
+
+        const deadline = Date.now() + 45000;
+        while (Date.now() < deadline) {
+          const devices = await navigator.hid.getDevices();
+          const device = devices.find((item) =>
+            item.vendorId === 0x054c && (item.productId === 0x0ce6 || item.productId === 0x0df2)
+          );
+          if (device) {
+            try {
+              await openSelectedDevice(device);
+              await readVersion();
+              log("自动读取新版固件版本完成", "success");
+              return;
+            } catch (error) {
+              log(`自动读取版本暂未成功：${error.message}`, "warn");
+            }
+          }
+          await sleep(1000);
+        }
+
+        log("OTA 已完成，但 45 秒内未自动读取到新版版本；请手动连接并读取版本", "warn");
+      }
+
+      function ensureDevice() {
+        if (!state.device?.opened) {
+          throw new Error("请先连接设备");
+        }
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function bind(handler) {
+        return async () => {
+          try {
+            await handler();
+          } catch (error) {
+            setStatus(error.message);
+            log(`错误：${error.message}`, "error");
+          } finally {
+            updateButtons();
+          }
+        };
+      }
+
+      els.connect.addEventListener("click", bind(connectDevice));
+      els.readVersion.addEventListener("click", bind(readVersion));
+      els.refreshRelease.addEventListener("click", bind(loadLatestRelease));
+      els.startUpdate.addEventListener("click", bind(startUpdate));
+      els.abortUpdate.addEventListener("click", () => {
+        state.abortRequested = true;
+        setStatus("已请求中止...");
+      });
+      els.localFile.addEventListener("change", () => {
+        state.localFile = els.localFile.files?.[0] || null;
+        updateSelectedAsset();
+        updateButtons();
+        if (state.localFile) {
+          setStatus("本地包已选择");
+          log(`已选择本地包：${state.localFile.name}`);
+        }
+      });
+      els.speed.addEventListener("change", () => {
+        updateSelectedAsset();
+        if (state.release) {
+          loadLatestRelease().catch((error) => log(`错误：${error.message}`, "error"));
+        }
+      });
+
+      if ("hid" in navigator) {
+        setStatus("页面脚本已运行");
+        log("页面脚本已运行，可以连接设备");
+      } else {
+        setStatus("当前浏览器不支持 WebHID");
+        log("请使用 Chrome 或 Edge，并从 HTTPS 打开页面", "error");
+      }
+
+      updateButtons();
+      loadLatestRelease().catch((error) => log(`错误：${error.message}`, "error"));
+    </script>
+  </body>
+</html>

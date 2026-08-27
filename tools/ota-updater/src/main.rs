@@ -15,6 +15,11 @@ use reqwest::Url;
 use sha2::{Digest, Sha256};
 
 const DEFAULT_REPO: &str = "mainlxl/ds5dongle-bl618-ota";
+const PROJECT_URL: &str = "https://github.com/mainlxl/ds5dongle-bl618-ota";
+const UPSTREAM_URL: &str = "https://github.com/sqlCRT/ds5dongle-bl618-opensource";
+const UPSTREAM_WEB_URL: &str = "https://ps5.ds5678.top/";
+const UPDATER_URL: &str =
+    "https://github.com/mainlxl/ds5dongle-bl618-ota/tree/master/tools/ota-updater";
 const REPORT_ID_CONFIG: u8 = 0xf6;
 const REPORT_ID_VERSION: u8 = 0xf8;
 const REPORT_ID_STATUS: u8 = 0xf9;
@@ -428,6 +433,15 @@ impl eframe::App for OtaApp {
                 ui.separator();
                 ui.label("GitHub Release 下载 + HID OTA 写入");
             });
+            ui.horizontal(|ui| {
+                ui.hyperlink_to("GitHub 地址", PROJECT_URL);
+                ui.separator();
+                ui.hyperlink_to("原作者地址", UPSTREAM_URL);
+                ui.separator();
+                ui.hyperlink_to("原作者设置页", UPSTREAM_WEB_URL);
+                ui.separator();
+                ui.hyperlink_to("工具地址", UPDATER_URL);
+            });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -830,7 +844,11 @@ fn perform_ota(
     tx: &Sender<WorkerMsg>,
 ) -> Result<()> {
     send_log(tx, LogLevel::Success, format!("已连接：{}", session.label));
-    send_log(tx, LogLevel::Info, format!("准备写入：{}", package.name));
+    send_log(
+        tx,
+        LogLevel::Info,
+        format!("开始写入 OTA 包：{}", package.name),
+    );
     send_log(
         tx,
         LogLevel::Info,
@@ -865,14 +883,6 @@ fn perform_ota(
                 progress,
                 format!("发送中：{}/{} chunks", index + 1, total_chunks),
             ));
-            send_log(
-                tx,
-                LogLevel::Info,
-                format!(
-                    "写入进度：{} / {} bytes，已落盘 {} bytes",
-                    status.received, status.total, status.payload_flushed
-                ),
-            );
         }
         thread::sleep(Duration::from_millis(2));
     }
@@ -880,8 +890,8 @@ fn perform_ota(
     send_feature_command(&session.device, &[OTA_CMD_FINISH], session.report_mode)?;
     send_log(
         tx,
-        LogLevel::Info,
-        "OTA 包已发送完成，等待设备校验并切换分区",
+        LogLevel::Success,
+        "OTA 包写入成功，等待设备校验并切换分区",
     );
     let _ = tx.send(WorkerMsg::Progress(0.95, "等待设备校验".to_string()));
 
@@ -895,8 +905,10 @@ fn perform_ota(
                     send_log(
                         tx,
                         LogLevel::Success,
-                        "OTA 完成；设备会重新枚举，请重新连接后读取版本",
+                        "OTA 完成；等待设备重新枚举并自动读取版本",
                     );
+                    let _ = tx.send(WorkerMsg::Progress(0.99, "等待设备重新连接".to_string()));
+                    wait_for_version_after_ota(tx);
                     let _ = tx.send(WorkerMsg::Progress(1.0, "OTA 完成".to_string()));
                     return Ok(());
                 }
@@ -912,8 +924,7 @@ fn perform_ota(
                     "校验中：{}，接收 {} / {}，落盘 {}",
                     status.label, status.received, status.total, status.payload_flushed
                 );
-                let _ = tx.send(WorkerMsg::Progress(0.97, label.clone()));
-                send_log(tx, LogLevel::Info, label);
+                let _ = tx.send(WorkerMsg::Progress(0.97, label));
             }
             Err(err) => {
                 send_log(
@@ -927,6 +938,44 @@ fn perform_ota(
     }
 
     bail!("等待 OTA 完成超时，请重新连接设备读取版本确认状态")
+}
+
+fn wait_for_version_after_ota(tx: &Sender<WorkerMsg>) {
+    thread::sleep(Duration::from_secs(2));
+    let deadline = Instant::now() + Duration::from_secs(45);
+    let mut last_error = String::from("设备尚未重新连接");
+
+    while Instant::now() < deadline {
+        match open_device() {
+            Ok(session) => match read_firmware_version(&session.device) {
+                Ok(version) if !version.is_empty() => {
+                    let _ = tx.send(WorkerMsg::Version(version.clone()));
+                    send_log(
+                        &tx,
+                        LogLevel::Success,
+                        format!("自动读取新版固件版本：{version}"),
+                    );
+                    return;
+                }
+                Ok(_) => {
+                    last_error = "读取到空版本号".to_string();
+                }
+                Err(err) => {
+                    last_error = format!("{err:#}");
+                }
+            },
+            Err(err) => {
+                last_error = format!("{err:#}");
+            }
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+
+    send_log(
+        tx,
+        LogLevel::Warn,
+        format!("OTA 已完成，但 45 秒内未自动读取到新版版本；请手动连接并读取版本。最后状态：{last_error}"),
+    );
 }
 
 fn wait_for_receive_started(device: &HidDevice, package_size: usize) -> Result<OtaStatus> {

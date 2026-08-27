@@ -12,4 +12,5 @@ bouffalo_sdk_ds5/
 *.tar.gz
 *.zip
 .DS_Store
+.wrangler/
 *.code-workspace
