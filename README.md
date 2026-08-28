@@ -22,7 +22,7 @@
 
 OTA 注入或接入校验失败时不会发布固件，避免把 OTA 能力刷没。
 
-注入方式尽量少依赖上游源码行号：OTA 主体代码独立放在 `overlays/ota/src/`，脚本只通过稳定锚点接入 CMake、F6 命令、状态/进度报告和重启轮询。
+注入方式尽量少依赖上游源码行号：OTA 主体代码独立放在 `overlays/ota/src/`，CMake 通过文件末尾追加 overlay block 接入；`usb_gamepad.c` 只通过稳定锚点接入 F6 命令、状态/进度报告和重启轮询。
 
 ## 本地注入 OTA
 
