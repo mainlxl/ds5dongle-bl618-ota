@@ -35,10 +35,8 @@ struct ota_update_ctx {
     uint32_t flash_addr;
     uint32_t flash_max_len;
     uint32_t erased_until;
-    uint32_t error_address;
     uint16_t expected_seq;
     uint8_t inactive_index;
-    uint8_t error_detail;
     bool active;
     bool header_ready;
     bool reboot_pending;
@@ -70,8 +68,6 @@ static void ota_set_error(uint8_t status, uint8_t detail, uint32_t address,
                           const char *msg)
 {
     ota.status = status;
-    ota.error_detail = detail;
-    ota.error_address = address;
     ota.active = false;
     ota.reboot_pending = false;
     LOG_ERR("[OTA] %s (status=%u detail=%u addr=0x%08lx)\n",
@@ -526,8 +522,13 @@ bool ota_update_handle_command(const uint8_t *payload, uint32_t len)
 
 bool ota_update_fill_progress_report(uint8_t *buf, uint32_t len)
 {
+    uint32_t clear_len = len < 12 ? len : 12;
+
     if (!buf || len < 12)
         return false;
+
+    if (clear_len > 3)
+        memset(buf + 3, 0, clear_len - 3);
 
     if (ota.status == OTA_STATUS_IDLE && !ota.reboot_pending)
         return false;
@@ -536,11 +537,6 @@ bool ota_update_fill_progress_report(uint8_t *buf, uint32_t len)
     write_le32(buf + 4, ota.package_received);
     write_le32(buf + 8, ota.package_size);
 
-    if (len >= 24) {
-        buf[14] = ota.error_detail;
-        write_le32(buf + 15, ota.error_address);
-        write_le32(buf + 19, ota.payload_flushed);
-    }
     return true;
 }
 

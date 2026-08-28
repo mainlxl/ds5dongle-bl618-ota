@@ -22,33 +22,6 @@ export const OTA_STATUS = {
   255: "error",
 };
 
-export const OTA_ERROR_DETAIL = {
-  0: "none",
-  1: "partition lookup failed",
-  2: "active partition table failed",
-  3: "FW entry failed",
-  4: "partition switch failed",
-  5: "bad OTA magic",
-  6: "bad OTA type",
-  7: "bad OTA size",
-  8: "image too large",
-  9: "flash erase failed",
-  10: "flash write failed",
-  11: "flash readback failed",
-  12: "flash compare mismatch",
-  13: "payload too large",
-  14: "bad payload magic",
-  15: "SHA init failed",
-  16: "SHA update failed",
-  17: "SHA finish failed",
-  18: "SHA mismatch",
-  19: "package too small",
-  20: "incomplete package",
-  21: "incomplete flash",
-  22: "sequence mismatch",
-  23: "short command",
-};
-
 export function readUint32LE(bytes, offset) {
   return (
     bytes[offset] |
@@ -85,18 +58,11 @@ export function parseOtaStatus(dataView) {
   const status = payload[2] ?? 0;
   const received = payload.length >= 7 ? readUint32LE(payload, 3) : 0;
   const total = payload.length >= 11 ? readUint32LE(payload, 7) : 0;
-  const errorDetail = payload.length >= 14 ? payload[13] : 0;
-  const errorAddress = payload.length >= 18 ? readUint32LE(payload, 14) : 0;
-  const payloadFlushed = payload.length >= 22 ? readUint32LE(payload, 18) : 0;
   return {
     status,
     label: OTA_STATUS[status] || `status ${status}`,
     received,
     total,
-    errorDetail,
-    errorLabel: OTA_ERROR_DETAIL[errorDetail] || `detail ${errorDetail}`,
-    errorAddress,
-    payloadFlushed,
     active: status !== 0 || total !== 0,
   };
 }

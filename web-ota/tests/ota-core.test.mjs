@@ -63,10 +63,6 @@ test("parses OTA progress reports with or without report id", () => {
     label: "receiving",
     received: 0x1234,
     total: 0x5678,
-    errorDetail: 12,
-    errorLabel: "flash compare mismatch",
-    errorAddress: 0x21abcd,
-    payloadFlushed: 0x0bc000,
     active: true,
   });
   assert.deepEqual(parseOtaStatus(new DataView(withoutId.buffer)), {
@@ -74,10 +70,6 @@ test("parses OTA progress reports with or without report id", () => {
     label: "receiving",
     received: 0x1234,
     total: 0x5678,
-    errorDetail: 12,
-    errorLabel: "flash compare mismatch",
-    errorAddress: 0x21abcd,
-    payloadFlushed: 0x0bc000,
     active: true,
   });
 });

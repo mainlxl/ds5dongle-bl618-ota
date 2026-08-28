@@ -157,10 +157,6 @@ struct OtaStatus {
     label: String,
     received: u32,
     total: u32,
-    error_detail: u8,
-    error_label: String,
-    error_address: u32,
-    payload_flushed: u32,
     raw_hex: String,
 }
 
@@ -767,18 +763,11 @@ fn read_ota_status(device: &HidDevice) -> Result<OtaStatus> {
     let status = *payload.get(2).unwrap_or(&0);
     let received = read_u32_le(payload, 3).unwrap_or(0);
     let total = read_u32_le(payload, 7).unwrap_or(0);
-    let error_detail = *payload.get(13).unwrap_or(&0);
-    let error_address = read_u32_le(payload, 14).unwrap_or(0);
-    let payload_flushed = read_u32_le(payload, 18).unwrap_or(0);
     Ok(OtaStatus {
         status,
         label: status_label(status).to_string(),
         received,
         total,
-        error_detail,
-        error_label: error_detail_label(error_detail).to_string(),
-        error_address,
-        payload_flushed,
         raw_hex: hex::encode(&buf[..len]),
     })
 }
@@ -921,8 +910,8 @@ fn perform_ota(
                     idle_reads = 0;
                 }
                 let label = format!(
-                    "校验中：{}，接收 {} / {}，落盘 {}",
-                    status.label, status.received, status.total, status.payload_flushed
+                    "校验中：{}，接收 {} / {}",
+                    status.label, status.received, status.total
                 );
                 let _ = tx.send(WorkerMsg::Progress(0.97, label));
             }
@@ -993,11 +982,10 @@ fn wait_for_receive_started(device: &HidDevice, package_size: usize) -> Result<O
     }
 
     bail!(
-        "设备没有进入 OTA 接收状态：{}，接收 {} / {}，落盘 {}，raw {}。START 命令可能没有被固件接收",
+        "设备没有进入 OTA 接收状态：{}，接收 {} / {}，raw {}。START 命令可能没有被固件接收",
         last.label,
         last.received,
         last.total,
-        last.payload_flushed,
         last.raw_hex
     )
 }
@@ -1022,14 +1010,7 @@ fn ensure_transfer_status(status: &OtaStatus, package_size: usize) -> Result<()>
 
 fn ensure_status_ok(status: &OtaStatus) -> Result<()> {
     if status.status >= 224 || status.status == 255 {
-        bail!(
-            "设备 OTA 失败：{}，细节：{}({})，地址 0x{:08x}，raw {}",
-            status.label,
-            status.error_label,
-            status.error_detail,
-            status.error_address,
-            status.raw_hex
-        );
+        bail!("设备 OTA 失败：{}，raw {}", status.label, status.raw_hex);
     }
     Ok(())
 }
@@ -1221,36 +1202,6 @@ fn status_label(status: u8) -> &'static str {
         227 => "device error",
         228 => "image error",
         255 => "error",
-        _ => "unknown",
-    }
-}
-
-fn error_detail_label(detail: u8) -> &'static str {
-    match detail {
-        0 => "none",
-        1 => "partition lookup failed",
-        2 => "active partition table failed",
-        3 => "FW entry failed",
-        4 => "partition switch failed",
-        5 => "bad OTA magic",
-        6 => "bad OTA type",
-        7 => "bad OTA size",
-        8 => "image too large",
-        9 => "flash erase failed",
-        10 => "flash write failed",
-        11 => "flash readback failed",
-        12 => "flash compare mismatch",
-        13 => "payload too large",
-        14 => "bad payload magic",
-        15 => "SHA init failed",
-        16 => "SHA update failed",
-        17 => "SHA finish failed",
-        18 => "SHA mismatch",
-        19 => "package too small",
-        20 => "incomplete package",
-        21 => "incomplete flash",
-        22 => "sequence mismatch",
-        23 => "short command",
         _ => "unknown",
     }
 }

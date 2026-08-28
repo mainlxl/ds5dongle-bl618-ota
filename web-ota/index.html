@@ -415,33 +415,6 @@
         255: "错误",
       };
 
-      const OTA_ERROR_DETAIL = {
-        0: "无",
-        1: "查找 OTA 分区失败",
-        2: "读取活动分区表失败",
-        3: "读取 FW 分区项失败",
-        4: "切换启动分区失败",
-        5: "OTA 包头 magic 不正确",
-        6: "OTA 包类型不是 RAW",
-        7: "OTA 包大小不正确",
-        8: "固件超过分区容量",
-        9: "擦除 flash 失败",
-        10: "写入 flash 失败",
-        11: "读回 flash 失败",
-        12: "写后读回内容不一致",
-        13: "payload 数据超出声明大小",
-        14: "payload 不是 BFNP 固件镜像",
-        15: "SHA 初始化失败",
-        16: "SHA 计算失败",
-        17: "SHA 收尾失败",
-        18: "最终 SHA 不一致",
-        19: "OTA 包太小",
-        20: "OTA 包接收不完整",
-        21: "flash 写入不完整",
-        22: "OTA 数据包序号不连续",
-        23: "OTA 命令长度不正确",
-      };
-
       const state = {
         device: null,
         release: null,
@@ -506,10 +479,6 @@
         return `${value} B`;
       }
 
-      function formatHex32(value) {
-        return `0x${(value >>> 0).toString(16).padStart(8, "0")}`;
-      }
-
       function readUint32LE(bytes, offset) {
         return (
           bytes[offset] |
@@ -546,18 +515,11 @@
         const status = payload[2] ?? 0;
         const received = payload.length >= 7 ? readUint32LE(payload, 3) : 0;
         const total = payload.length >= 11 ? readUint32LE(payload, 7) : 0;
-        const errorDetail = payload.length >= 14 ? payload[13] : 0;
-        const errorAddress = payload.length >= 18 ? readUint32LE(payload, 14) : 0;
-        const payloadFlushed = payload.length >= 22 ? readUint32LE(payload, 18) : 0;
         return {
           status,
           label: OTA_STATUS[status] || `状态 ${status}`,
           received,
           total,
-          errorDetail,
-          errorLabel: OTA_ERROR_DETAIL[errorDetail] || `错误细节 ${errorDetail}`,
-          errorAddress,
-          payloadFlushed,
         };
       }
 
@@ -854,10 +816,7 @@
           setProgress(status.received, status.total);
         }
         if (status.status >= 224) {
-          const details = status.errorDetail
-            ? `；细节：${status.errorLabel}；地址：${formatHex32(status.errorAddress)}；已写入：${formatBytes(status.payloadFlushed)}`
-            : "";
-          throw new Error(`设备 OTA 失败：${status.label}${details}`);
+          throw new Error(`设备 OTA 失败：${status.label}`);
         }
         return status;
       }

@@ -151,16 +151,6 @@ ensure_cmake_hooks() {
             'sdk_add_include_directories(${BL_SDK_BASE}/components/wireless/bluetooth/blestack/src/common/tinycrypt/include)'
     fi
 
-    if ! grep -Fq 'FIRMWARE_VERSION_SUFFIX' CMakeLists.txt; then
-        insert_before_pattern \
-            CMakeLists.txt \
-            "firmware version suffix compile definition" \
-            '^target_compile_options' \
-            'if(DEFINED ENV{FW_VERSION_SUFFIX})
-    target_compile_definitions(app PRIVATE FIRMWARE_VERSION_SUFFIX=\"$ENV{FW_VERSION_SUFFIX}\")
-    message(STATUS "Firmware version suffix: $ENV{FW_VERSION_SUFFIX}")
-endif()'
-    fi
 }
 
 ensure_usb_gamepad_hooks() {
@@ -170,22 +160,6 @@ ensure_usb_gamepad_hooks() {
             "OTA header include" \
             '^#include "remap.h"$' \
             '#include "ota_update.h"'
-    fi
-
-    if ! grep -Fq '#ifndef FIRMWARE_VERSION_SUFFIX' src/usb_gamepad.c; then
-        insert_before_pattern \
-            src/usb_gamepad.c \
-            "firmware version suffix fallback" \
-            '^[[:space:]]*#if defined' \
-            '#ifndef FIRMWARE_VERSION_SUFFIX
-#define FIRMWARE_VERSION_SUFFIX ""
-#endif
-'
-    fi
-
-    perl -0pi -e 's/(#define\s+FIRMWARE_VERSION\s+"[^"\n]*")(?!\s*FIRMWARE_VERSION_SUFFIX)/$1 FIRMWARE_VERSION_SUFFIX/g' src/usb_gamepad.c
-    if grep -Eq '#define[[:space:]]+FIRMWARE_VERSION[[:space:]]+"[^"]+"[[:space:]]*$' src/usb_gamepad.c; then
-        die "some FIRMWARE_VERSION definitions do not include FIRMWARE_VERSION_SUFFIX"
     fi
 
     if ! grep -Fq 'ota_update_reboot_due()' src/usb_gamepad.c; then
@@ -201,38 +175,12 @@ ensure_usb_gamepad_hooks() {
 '
     fi
 
-    if ! grep -Fq 'ota_update_init();' src/usb_gamepad.c; then
-        insert_before_pattern \
-            src/usb_gamepad.c \
-            "OTA initialization" \
-            'USB-INIT' \
-            '    ota_update_init();
-'
-    fi
-
     if ! grep -Fq 'ota_update_fill_progress_report' src/usb_gamepad.c; then
         insert_before_fixed \
             src/usb_gamepad.c \
             "OTA progress feature report" \
             'feature_resp_buf[12] = get_battery_level();' \
-            '            memset(feature_resp_buf + 3, 0, 9);
-            ota_update_fill_progress_report(feature_resp_buf, FEATURE_DATA_MAX + 1);'
-    fi
-
-    if ! awk '
-        /ota_update_fill_progress_report/ { seen_ota = 1 }
-        seen_ota && /\*len[[:space:]]*=[[:space:]]*24[[:space:]]*;/ { found = 1 }
-        END { exit found ? 0 : 1 }
-    ' src/usb_gamepad.c; then
-        rewrite_with_awk src/usb_gamepad.c "OTA progress report length" '
-            /ota_update_fill_progress_report/ { seen_ota = 1 }
-            seen_ota && /\*len[[:space:]]*=[[:space:]]*14[[:space:]]*;/ && !done {
-                sub(/\*len[[:space:]]*=[[:space:]]*14[[:space:]]*;/, "*len  = 24;")
-                done = 1
-            }
-            { print }
-            END { if (!done) exit 42 }
-        '
+            '            ota_update_fill_progress_report(feature_resp_buf, FEATURE_DATA_MAX + 1);'
     fi
 
     if ! grep -Fq 'ota_update_handle_command(payload, payload_len)' src/usb_gamepad.c; then
@@ -245,11 +193,8 @@ ota_is_integrated() {
         [[ -f src/ota_update.h ]] &&
         grep -Fq 'src/ota_update.c' CMakeLists.txt &&
         grep -Fq 'tinycrypt/include' CMakeLists.txt &&
-        grep -Fq 'FIRMWARE_VERSION_SUFFIX' CMakeLists.txt &&
         grep -Fq '#include "ota_update.h"' src/usb_gamepad.c &&
-        grep -Fq 'ota_update_init();' src/usb_gamepad.c &&
         grep -Fq 'ota_update_fill_progress_report' src/usb_gamepad.c &&
-        grep -Eq '\*len[[:space:]]*=[[:space:]]*24[[:space:]]*;' src/usb_gamepad.c &&
         grep -Fq 'ota_update_handle_command(payload, payload_len)' src/usb_gamepad.c &&
         grep -Fq 'ota_update_reboot_due()' src/usb_gamepad.c
 }
