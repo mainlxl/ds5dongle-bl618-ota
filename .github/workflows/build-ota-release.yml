@@ -2,6 +2,11 @@ name: Build OTA Release
 
 on:
   workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: "上游 Release tag；留空则同步 latest"
+        required: false
+        type: string
   push:
     branches:
       - master
@@ -41,15 +46,27 @@ jobs:
 
       - name: Resolve upstream release
         id: prepare
+        env:
+          REQUESTED_TAG: ${{ inputs.upstream_tag || '' }}
         run: |
           set -euo pipefail
 
-          latest_location="$(curl -fsSI "https://github.com/${UPSTREAM_REPO}/releases/latest" \
-            | awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }')"
-          tag="${latest_location##*/}"
-          if [[ -z "$tag" || "$tag" == "latest" || "$latest_location" != *"/releases/tag/"* ]]; then
-            echo "Could not resolve upstream latest release tag from ${latest_location}."
-            exit 1
+          tag="${REQUESTED_TAG#refs/tags/}"
+          if [[ -n "$tag" ]]; then
+            if ! git ls-remote --exit-code --tags \
+              "https://github.com/${UPSTREAM_REPO}.git" "refs/tags/${tag}" >/dev/null 2>&1; then
+              echo "Upstream tag does not exist: ${tag}"
+              exit 1
+            fi
+            echo "Manual upstream tag requested: ${tag}"
+          else
+            latest_location="$(curl -fsSI "https://github.com/${UPSTREAM_REPO}/releases/latest" \
+              | awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/\r$/, "", $2); print $2; exit }')"
+            tag="${latest_location##*/}"
+            if [[ -z "$tag" || "$tag" == "latest" || "$latest_location" != *"/releases/tag/"* ]]; then
+              echo "Could not resolve upstream latest release tag from ${latest_location}."
+              exit 1
+            fi
           fi
 
           safe_tag="${tag//\//-}"
