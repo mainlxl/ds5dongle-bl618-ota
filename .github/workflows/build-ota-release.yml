@@ -7,7 +7,7 @@ on:
       - master
     paths:
       - ".github/workflows/build-ota-release.yml"
-      - "patches/**"
+      - "overlays/**"
       - "tools/apply-ota-patches.sh"
   schedule:
     - cron: "17 * * * *"
@@ -122,9 +122,9 @@ jobs:
           git clone --depth 1 --branch "${UPSTREAM_TAG}" --recursive \
             "https://github.com/${UPSTREAM_REPO}.git" upstream-src
 
-      - name: Apply OTA patch
+      - name: Inject OTA overlay
         run: |
-          bash ota-overlay/tools/apply-ota-patches.sh upstream-src patches/ota
+          bash ota-overlay/tools/apply-ota-patches.sh upstream-src
 
       - name: Checkout Bouffalo SDK fork
         run: |
@@ -289,7 +289,7 @@ jobs:
           上游仓库：https://github.com/${UPSTREAM_REPO}
           上游 Release：https://github.com/${UPSTREAM_REPO}/releases/tag/${RELEASE_TAG}
 
-          本仓库没有保存上游源码；此 Release 由 GitHub Actions 临时拉取上游 tag、应用 \`patches/ota\` 后编译生成。
+          本仓库没有保存上游源码；此 Release 由 GitHub Actions 临时拉取上游 tag、注入 \`overlays/ota\` 后编译生成。
 
           附件包含 Full-Speed / High-Speed 固件、OTA 包、DevCube 刷机 zip 和 SHA256 校验文件。
 

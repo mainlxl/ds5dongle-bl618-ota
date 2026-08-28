@@ -4,8 +4,8 @@
 
 - 上游仓库：<https://github.com/sqlCRT/ds5dongle-bl618-opensource>
 - 本仓库：<https://github.com/mainlxl/ds5dongle-bl618-ota>
-- OTA 补丁：`patches/ota/`
-- 补丁应用脚本：`tools/apply-ota-patches.sh`
+- OTA 源码 overlay：`overlays/ota/`
+- OTA 注入脚本：`tools/apply-ota-patches.sh`
 - 桌面 OTA 工具：`tools/ota-updater/`
 - Cloudflare Web OTA：`web-ota/`
 
@@ -16,16 +16,18 @@
 如果本仓库还没有同名 Release，Action 会：
 
 1. 拉取上游 Release tag 对应源码。
-2. 应用 `patches/ota/` 中的 OTA 补丁。
+2. 复制 `overlays/ota/` 中的 OTA 源码，并用锚点注入少量 CMake / USB 命令接入代码。
 3. 构建 LCTech BL616 的 Full-Speed / High-Speed 固件。
 4. 发布同名 Release，附件包含 `.bin`、`.bin.ota`、`.xz.ota`、DevCube 刷机 zip 和 SHA256 校验文件。
 
-补丁应用或 OTA 接入校验失败时不会发布固件，避免把 OTA 能力刷没。
+OTA 注入或接入校验失败时不会发布固件，避免把 OTA 能力刷没。
 
-## 本地应用补丁
+注入方式尽量少依赖上游源码行号：OTA 主体代码独立放在 `overlays/ota/src/`，脚本只通过稳定锚点接入 CMake、版本后缀、F6 命令、状态/进度报告和重启轮询。
+
+## 本地注入 OTA
 
 ```bash
-bash tools/apply-ota-patches.sh /path/to/upstream-src patches/ota
+bash tools/apply-ota-patches.sh /path/to/upstream-src
 ```
 
 如果脚本输出 `OTA integration verified.`，说明上游源码已经接入 OTA。
