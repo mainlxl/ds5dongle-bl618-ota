@@ -255,11 +255,6 @@
         font-size: 0.95rem;
       }
 
-      .log-heading span {
-        color: var(--muted);
-        font-size: 0.78rem;
-      }
-
       button {
         min-height: 42px;
         border: 1px solid var(--line);
@@ -295,7 +290,7 @@
 
       .facts {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 1px;
         overflow: hidden;
         border: 1px solid var(--line);
@@ -315,6 +310,14 @@
         margin-top: 5px;
         overflow-wrap: anywhere;
         font-size: 0.95rem;
+      }
+
+      .facts .asset-value {
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        font-size: 0.82rem;
+        scrollbar-width: thin;
       }
 
       .progress {
@@ -497,7 +500,7 @@
               </div>
               <div>
                 <span>升级包</span>
-                <strong id="selected-asset">-</strong>
+                <strong id="selected-asset" class="asset-value">-</strong>
               </div>
                 </div>
 
@@ -512,7 +515,6 @@
               <aside class="log-panel" aria-labelledby="log-title">
                 <div class="log-heading">
                   <h3 id="log-title">运行日志</h3>
-                  <span>自动换行</span>
                 </div>
                 <div id="log" class="log" aria-live="polite"></div>
               </aside>
