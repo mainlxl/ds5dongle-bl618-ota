@@ -351,7 +351,28 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web-ota-static --project-name ds5dongle-ota --commit-dirty=true
+          command: pages deploy web-ota-static --project-name ds5dongle-ota --branch master --commit-dirty=true
+
+      - name: Verify production Web OTA manifest
+        if: steps.cloudflare.outputs.enabled == 'true'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            manifest="$(curl --fail --silent --show-error --location \
+              --retry 3 --retry-delay 2 --retry-all-errors --max-time 20 \
+              "${WEB_OTA_SITE_URL}/manifest.json?verify=${GITHUB_RUN_ID}-${attempt}" || true)"
+            deployed_latest="$(printf '%s' "$manifest" | node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { try { process.stdout.write(JSON.parse(s).latest || ""); } catch { process.stdout.write(""); } });')"
+            echo "Production manifest attempt ${attempt}: '${deployed_latest}', expected '${RELEASE_TAG}'."
+            if [[ "$deployed_latest" == "$RELEASE_TAG" ]]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Cloudflare production manifest did not switch to ${RELEASE_TAG}." >&2
+          exit 1
 
   sync-cloudflare:
     name: Repair Cloudflare static OTA
@@ -403,12 +424,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          mkdir -p release-assets
-          gh release download "${RELEASE_TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --pattern "*.bin.ota" \
-            --pattern "SHA256SUMS-*.txt" \
-            --dir release-assets
+          set -euo pipefail
+          for attempt in {1..5}; do
+            rm -rf release-assets
+            mkdir -p release-assets
+            if gh release download "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "*.bin.ota" \
+              --pattern "SHA256SUMS-*.txt" \
+              --dir release-assets; then
+              exit 0
+            fi
+            echo "GitHub Release asset download failed on attempt ${attempt}; retrying."
+            sleep $((attempt * 5))
+          done
+          echo "Unable to download OTA assets for ${RELEASE_TAG} after 5 attempts." >&2
+          exit 1
 
       - name: Build static Web OTA assets
         if: steps.manifest.outputs.sync_needed == 'true'
@@ -427,4 +458,25 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web-ota-static --project-name ds5dongle-ota --commit-dirty=true
+          command: pages deploy web-ota-static --project-name ds5dongle-ota --branch master --commit-dirty=true
+
+      - name: Verify production Web OTA manifest
+        if: steps.manifest.outputs.sync_needed == 'true'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            manifest="$(curl --fail --silent --show-error --location \
+              --retry 3 --retry-delay 2 --retry-all-errors --max-time 20 \
+              "${WEB_OTA_SITE_URL}/manifest.json?verify=${GITHUB_RUN_ID}-${attempt}" || true)"
+            deployed_latest="$(printf '%s' "$manifest" | node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { try { process.stdout.write(JSON.parse(s).latest || ""); } catch { process.stdout.write(""); } });')"
+            echo "Production manifest attempt ${attempt}: '${deployed_latest}', expected '${RELEASE_TAG}'."
+            if [[ "$deployed_latest" == "$RELEASE_TAG" ]]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Cloudflare production manifest did not switch to ${RELEASE_TAG}." >&2
+          exit 1
