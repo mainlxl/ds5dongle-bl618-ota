@@ -334,8 +334,10 @@
         <div class="body">
           <div class="grid">
             <label class="field">
-              <span class="label">Release 仓库</span>
-              <input id="repo" value="mainlxl/ds5dongle-bl618-ota" spellcheck="false" readonly>
+              <span class="label">目标 OTA 版本</span>
+              <select id="release" disabled>
+                <option value="">正在加载版本...</option>
+              </select>
             </label>
 
             <label class="field">
@@ -355,7 +357,7 @@
           <div class="actions">
             <button id="connect" type="button">连接设备</button>
             <button id="read-version" type="button">读取版本</button>
-            <button id="refresh-release" type="button">检查最新 Release</button>
+            <button id="refresh-release" type="button">刷新 OTA 版本</button>
             <button id="start-update" class="primary" type="button">开始 OTA</button>
             <button id="abort-update" class="danger" type="button">中止</button>
           </div>
@@ -370,8 +372,8 @@
               <strong id="current-version">-</strong>
             </div>
             <div>
-              <span>最新版本</span>
-              <strong id="latest-version">-</strong>
+              <span>目标 OTA 版本</span>
+              <strong id="target-version">-</strong>
             </div>
             <div>
               <span>升级包</span>
@@ -417,6 +419,7 @@
 
       const state = {
         device: null,
+        releases: [],
         release: null,
         localFile: null,
         currentVersion: "",
@@ -427,7 +430,7 @@
 
       const $ = (selector) => document.querySelector(selector);
       const els = {
-        repo: $("#repo"),
+        release: $("#release"),
         localFile: $("#local-file"),
         speed: $("#speed"),
         connect: $("#connect"),
@@ -437,7 +440,7 @@
         abortUpdate: $("#abort-update"),
         deviceName: $("#device-name"),
         currentVersion: $("#current-version"),
-        latestVersion: $("#latest-version"),
+        targetVersion: $("#target-version"),
         selectedAsset: $("#selected-asset"),
         statusText: $("#status-text"),
         progressText: $("#progress-text"),
@@ -603,6 +606,7 @@
         els.connect.disabled = state.updating;
         els.readVersion.disabled = !connected || state.updating;
         els.refreshRelease.disabled = state.updating;
+        els.release.disabled = state.updating || state.releases.length === 0;
         els.startUpdate.disabled = !connected || (!state.release && !state.localFile) || state.updating;
         els.abortUpdate.disabled = !connected || !state.updating;
       }
@@ -654,8 +658,8 @@
         log(`固件版本：${version || "未知"}`);
       }
 
-      async function loadLatestRelease() {
-        setStatus("正在检查 Release...");
+      async function loadReleases() {
+        setStatus("正在检查 OTA 版本...");
         const response = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, {
           cache: "no-store",
         });
@@ -663,16 +667,41 @@
         if (!response.ok) {
           throw new Error(data?.error || `读取 OTA 清单失败：HTTP ${response.status}`);
         }
-        const release = data?.releases?.[0];
-        if (!release?.tag_name || !Array.isArray(release.assets)) {
+        const releases = data?.releases;
+        if (!Array.isArray(releases) || releases.length === 0 || releases.some((release) => !release?.tag_name || !Array.isArray(release.assets))) {
           throw new Error("OTA 清单为空或格式不正确");
         }
-        state.release = release;
-        els.repo.value = data.repo || "mainlxl/ds5dongle-bl618-ota";
-        els.latestVersion.textContent = release.tag_name || "-";
-        updateSelectedAsset();
+        const previousTag = state.release?.tag_name;
+        state.releases = releases;
+        els.release.replaceChildren(...releases.map((release) => {
+          const option = document.createElement("option");
+          option.value = release.tag_name;
+          option.textContent = release.tag_name;
+          return option;
+        }));
+        selectRelease(
+          releases.some((release) => release.tag_name === previousTag)
+            ? previousTag
+            : (data.latest || releases[0].tag_name),
+        );
         setStatus("OTA 源已就绪");
-        log(`最新 Release：${release.tag_name}`, "success");
+        log(`已加载 ${releases.length} 个 OTA 版本，目标版本：${state.release.tag_name}`, "success");
+        updateButtons();
+      }
+
+      function selectRelease(tag) {
+        const release = state.releases.find((item) => item.tag_name === tag) || state.releases[0];
+        if (!release) {
+          state.release = null;
+          els.targetVersion.textContent = "-";
+          updateSelectedAsset();
+          updateButtons();
+          return;
+        }
+        state.release = release;
+        els.release.value = release.tag_name;
+        els.targetVersion.textContent = release.tag_name;
+        updateSelectedAsset();
         updateButtons();
       }
 
@@ -889,7 +918,7 @@
 
       els.connect.addEventListener("click", bind(connectDevice));
       els.readVersion.addEventListener("click", bind(readVersion));
-      els.refreshRelease.addEventListener("click", bind(loadLatestRelease));
+      els.refreshRelease.addEventListener("click", bind(loadReleases));
       els.startUpdate.addEventListener("click", bind(startUpdate));
       els.abortUpdate.addEventListener("click", () => {
         state.abortRequested = true;
@@ -907,6 +936,11 @@
       els.speed.addEventListener("change", () => {
         updateSelectedAsset();
       });
+      els.release.addEventListener("change", () => {
+        selectRelease(els.release.value);
+        setStatus("已选择目标 OTA 版本");
+        log(`目标 OTA 版本：${state.release.tag_name}`, "success");
+      });
 
       if ("hid" in navigator) {
         setStatus("页面脚本已运行");
@@ -917,7 +951,7 @@
       }
 
       updateButtons();
-      loadLatestRelease().catch((error) => log(`错误：${error.message}`, "error"));
+      loadReleases().catch((error) => log(`错误：${error.message}`, "error"));
     </script>
   </body>
 </html>

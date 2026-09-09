@@ -109,6 +109,10 @@ export function selectReleaseAsset(release, speed) {
   return release.assets?.find((asset) => pattern.test(asset.name)) || null;
 }
 
+export function selectReleaseByTag(releases, tag) {
+  return releases.find((release) => release.tag_name === tag) || releases[0] || null;
+}
+
 export function selectChecksumAsset(release, speed) {
   const tag = (release.tag_name || "").replaceAll("/", "-");
   const exactName = `SHA256SUMS-${tag}-${speed}.txt`;

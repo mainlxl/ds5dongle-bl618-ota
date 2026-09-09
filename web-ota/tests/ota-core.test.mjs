@@ -12,6 +12,7 @@ import {
   parseFirmwareVersion,
   parseOtaStatus,
   parseSha256Sums,
+  selectReleaseByTag,
   selectReleaseAsset,
 } from "../ota-core.js";
 
@@ -86,6 +87,17 @@ test("selects FS and HS release OTA assets", () => {
 
   assert.equal(selectReleaseAsset(release, "fs").name, "ds5dongle-lctech616-v3.18.bin.ota");
   assert.equal(selectReleaseAsset(release, "hs").name, "ds5dongle-lctech616-v3.18-hs.bin.ota");
+});
+
+test("selects the requested OTA release and falls back to the first release", () => {
+  const releases = [
+    { tag_name: "v3.20a", assets: [] },
+    { tag_name: "v3.18", assets: [] },
+  ];
+
+  assert.equal(selectReleaseByTag(releases, "v3.18").tag_name, "v3.18");
+  assert.equal(selectReleaseByTag(releases, "missing").tag_name, "v3.20a");
+  assert.equal(selectReleaseByTag([], "v3.18"), null);
 });
 
 test("creates start and sequenced data commands", () => {
