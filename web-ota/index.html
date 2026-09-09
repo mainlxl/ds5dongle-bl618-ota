@@ -50,7 +50,8 @@
 
       .panel {
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 14px;
+        overflow: hidden;
         background: var(--panel);
         box-shadow: 0 18px 48px rgba(27, 39, 45, 0.1);
       }
@@ -110,7 +111,7 @@
         width: 100%;
         min-height: 42px;
         border: 1px solid var(--line);
-        border-radius: 6px;
+        border-radius: 10px;
         padding: 0 12px;
         color: var(--ink);
         background: #fff;
@@ -161,9 +162,9 @@
       }
 
       .first-use {
-        margin-bottom: 28px;
-        border-bottom: 1px solid var(--line);
-        padding-bottom: 26px;
+        margin-top: 28px;
+        border-top: 1px solid var(--line);
+        padding-top: 26px;
       }
 
       .first-use-intro {
@@ -187,7 +188,7 @@
         flex-direction: column;
         justify-content: center;
         border: 1px solid #b9d8d3;
-        border-radius: 6px;
+        border-radius: 10px;
         padding: 9px 13px;
         color: var(--accent-dark);
         background: var(--accent-soft);
@@ -226,13 +227,43 @@
       }
 
       .ota-area {
-        margin-bottom: 28px;
+        margin-bottom: 0;
+      }
+
+      .ota-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr);
+        gap: 24px;
+        align-items: start;
+      }
+
+      .ota-controls,
+      .log-panel {
+        min-width: 0;
+      }
+
+      .log-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 8px;
+      }
+
+      .log-heading h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .log-heading span {
+        color: var(--muted);
+        font-size: 0.78rem;
       }
 
       button {
         min-height: 42px;
         border: 1px solid var(--line);
-        border-radius: 6px;
+        border-radius: 10px;
         padding: 0 14px;
         color: var(--ink);
         background: #fff;
@@ -268,7 +299,7 @@
         gap: 1px;
         overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 10px;
         background: var(--line);
       }
 
@@ -317,16 +348,18 @@
       }
 
       .log {
-        min-height: 190px;
-        max-height: 300px;
+        min-height: 315px;
+        max-height: 430px;
         margin: 0;
         overflow: auto;
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 14px;
         color: #2f3b41;
         background: #f9fbfb;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .log-line {
@@ -345,23 +378,6 @@
       .log-line.success {
         color: var(--ok);
         font-weight: 700;
-      }
-
-      .site-footer {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px 20px;
-        padding: 18px 4px 0;
-        color: var(--muted);
-        font-size: 0.86rem;
-      }
-
-      .footer-links {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 16px;
       }
 
       .sr-only {
@@ -385,7 +401,8 @@
         .body,
         .grid,
         .progress,
-        .flash-tools {
+        .flash-tools,
+        .ota-layout {
           grid-template-columns: 1fr;
         }
 
@@ -394,13 +411,13 @@
           padding: 18px;
         }
 
-        .site-footer {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
         .facts {
           grid-template-columns: 1fr;
+        }
+
+        .log {
+          min-height: 220px;
+          max-height: 320px;
         }
 
         .actions button {
@@ -423,14 +440,90 @@
         <span id="status-text" class="sr-only" aria-live="polite">页面已加载</span>
 
         <div class="body">
+          <p class="first-use-intro">
+            如果设备当前还是原作者固件，或网页提示无法进入 OTA 接收状态，请先下载完整刷机包，通过 UART/ISP 刷入一次；之后即可直接使用下面的在线 OTA。
+          </p>
+
+          <section class="ota-area" aria-labelledby="ota-title">
+            <div class="section-heading">
+              <h2 id="ota-title">在线 OTA</h2>
+              <p class="section-note">连接设备后选择目标版本并开始升级。</p>
+            </div>
+
+            <div class="ota-layout">
+              <div class="ota-controls">
+                <div class="grid">
+              <label class="field">
+                <span class="label">目标 OTA 版本</span>
+                <select id="release" disabled>
+                  <option value="">正在加载版本...</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span class="label">固件类型</span>
+                <select id="speed">
+                  <option value="hs">High-Speed</option>
+                  <option value="fs">Full-Speed</option>
+                </select>
+              </label>
+
+              <label class="field wide">
+                <span class="label">本地 OTA 包（可选）</span>
+                <input id="local-file" type="file" accept=".ota,.bin.ota,application/octet-stream">
+              </label>
+                </div>
+
+                <div class="actions">
+              <button id="connect" type="button">连接设备</button>
+              <button id="read-version" type="button">读取版本</button>
+              <button id="refresh-release" type="button">刷新 OTA 版本</button>
+              <button id="start-update" class="primary" type="button">开始 OTA</button>
+              <button id="abort-update" class="danger" type="button">中止</button>
+                </div>
+
+                <div class="facts">
+              <div>
+                <span>设备</span>
+                <strong id="device-name">-</strong>
+              </div>
+              <div>
+                <span>当前版本</span>
+                <strong id="current-version">-</strong>
+              </div>
+              <div>
+                <span>目标 OTA 版本</span>
+                <strong id="target-version">-</strong>
+              </div>
+              <div>
+                <span>升级包</span>
+                <strong id="selected-asset">-</strong>
+              </div>
+                </div>
+
+                <div class="progress">
+              <div class="track">
+                <div id="progress-bar" class="bar"></div>
+              </div>
+              <div id="progress-text" class="progress-text">0%</div>
+                </div>
+              </div>
+
+              <aside class="log-panel" aria-labelledby="log-title">
+                <div class="log-heading">
+                  <h3 id="log-title">运行日志</h3>
+                  <span>自动换行</span>
+                </div>
+                <div id="log" class="log" aria-live="polite"></div>
+              </aside>
+            </div>
+          </section>
+
           <section class="first-use" aria-labelledby="first-use-title">
             <div class="section-heading">
-              <h2 id="first-use-title">首次使用 / 需要先刷机？</h2>
-              <p class="section-note">原作者固件首次接入 OTA 前，请先刷入我们的完整固件。</p>
+              <h2 id="first-use-title">首次使用 / 全量刷机</h2>
+              <p class="section-note">适用于原作者固件或无法进入 OTA 的设备。</p>
             </div>
-            <p class="first-use-intro">
-              如果设备当前还是原作者固件，或网页提示无法进入 OTA 接收状态，请先下载完整刷机包，通过 UART/ISP 刷入一次；之后即可直接使用下面的在线 OTA。
-            </p>
             <div class="flash-tools">
               <a id="download-fs-flash" class="download-link" href="#" target="_blank" rel="noreferrer">
                 <strong>下载 Full-Speed 完整刷机包</strong>
@@ -452,82 +545,8 @@
             </p>
           </section>
 
-          <section class="ota-area" aria-labelledby="ota-title">
-            <div class="section-heading">
-              <h2 id="ota-title">在线 OTA</h2>
-              <p class="section-note">连接设备后选择目标版本并开始升级。</p>
-            </div>
-
-            <div class="grid">
-              <label class="field">
-                <span class="label">目标 OTA 版本</span>
-                <select id="release" disabled>
-                  <option value="">正在加载版本...</option>
-                </select>
-              </label>
-
-              <label class="field">
-                <span class="label">固件类型</span>
-                <select id="speed">
-                  <option value="hs">High-Speed</option>
-                  <option value="fs">Full-Speed</option>
-                </select>
-              </label>
-
-              <label class="field wide">
-                <span class="label">本地 OTA 包（可选）</span>
-                <input id="local-file" type="file" accept=".ota,.bin.ota,application/octet-stream">
-              </label>
-            </div>
-
-            <div class="actions">
-              <button id="connect" type="button">连接设备</button>
-              <button id="read-version" type="button">读取版本</button>
-              <button id="refresh-release" type="button">刷新 OTA 版本</button>
-              <button id="start-update" class="primary" type="button">开始 OTA</button>
-              <button id="abort-update" class="danger" type="button">中止</button>
-            </div>
-
-            <div class="facts">
-              <div>
-                <span>设备</span>
-                <strong id="device-name">-</strong>
-              </div>
-              <div>
-                <span>当前版本</span>
-                <strong id="current-version">-</strong>
-              </div>
-              <div>
-                <span>目标 OTA 版本</span>
-                <strong id="target-version">-</strong>
-              </div>
-              <div>
-                <span>升级包</span>
-                <strong id="selected-asset">-</strong>
-              </div>
-            </div>
-
-            <div class="progress">
-              <div class="track">
-                <div id="progress-bar" class="bar"></div>
-              </div>
-              <div id="progress-text" class="progress-text">0%</div>
-            </div>
-
-            <div id="log" class="log" aria-live="polite"></div>
-          </section>
-
         </div>
       </section>
-      <footer class="site-footer">
-        <span>相关链接</span>
-        <nav class="footer-links" aria-label="相关链接">
-          <a href="https://github.com/mainlxl/ds5dongle-bl618-ota" target="_blank" rel="noreferrer">GitHub 地址</a>
-          <a href="https://github.com/sqlCRT/ds5dongle-bl618-opensource" target="_blank" rel="noreferrer">原作者地址</a>
-          <a href="https://ps5.ds5678.top/" target="_blank" rel="noreferrer">原作者设置页</a>
-          <a href="https://github.com/mainlxl/ds5dongle-bl618-ota/tree/master/web-ota" target="_blank" rel="noreferrer">工具地址</a>
-        </nav>
-      </footer>
     </main>
 
     <script>
