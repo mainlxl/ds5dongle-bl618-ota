@@ -9,6 +9,9 @@ on:
       - "web-ota/**"
       - ".github/workflows/cloudflare-pages.yml"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy Web OTA
@@ -30,9 +33,51 @@ jobs:
             echo "Cloudflare secrets are not configured; skip Pages deploy."
           fi
 
-      - name: Build static Web OTA shell
+      - name: Resolve latest local release
+        id: release
         if: steps.cloudflare.outputs.enabled == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(gh release list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --limit 1 \
+            --exclude-drafts \
+            --exclude-pre-releases \
+            --json tagName \
+            --jq '.[0].tagName')"
+          if [[ -z "$tag" ]]; then
+            echo "No local release found."
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Download latest OTA and fixed base assets
+        if: steps.cloudflare.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_FLASH_TAG: v3.20a
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "*.bin.ota" \
+            --pattern "SHA256SUMS-*.txt" \
+            --dir release-assets
+          gh release download "${BASE_FLASH_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "*.flash.zip" \
+            --dir release-assets
+
+      - name: Build static Web OTA assets
+        if: steps.cloudflare.outputs.enabled == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ASSETS_DIR: release-assets
+          WEB_OTA_BASE_FLASH_TAG: v3.20a
           WEB_OTA_OUTPUT_DIR: web-ota-static
           WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
           WEB_OTA_KEEP_RELEASES: "100"
