@@ -339,6 +339,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_ASSETS_DIR: release-assets
+          WEB_OTA_BASE_FLASH_TAG: v3.20a
           WEB_OTA_OUTPUT_DIR: web-ota-static
           WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
           WEB_OTA_KEEP_RELEASES: "100"
@@ -405,23 +406,32 @@ jobs:
         if: steps.cloudflare.outputs.enabled == 'true'
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          BASE_FLASH_TAG: v3.20a
           WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
         run: |
           set -euo pipefail
           manifest="$(curl -fsS "${WEB_OTA_SITE_URL}/manifest.json?t=$(date +%s)" || true)"
           deployed_latest="$(printf '%s' "$manifest" | node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { try { process.stdout.write(JSON.parse(s).latest || ""); } catch { process.stdout.write(""); } });')"
-          if [[ "$deployed_latest" == "$RELEASE_TAG" ]]; then
+          base_flash_ready="$(printf '%s' "$manifest" | node -e 'let s=""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { try { const d = JSON.parse(s); process.stdout.write(d.base_flash?.tag_name === process.env.BASE_FLASH_TAG && (d.base_flash.assets || []).length >= 2 ? "true" : "false"); } catch { process.stdout.write("false"); } });')"
+          if [[ "$deployed_latest" == "$RELEASE_TAG" && "$base_flash_ready" == "true" ]]; then
             echo "sync_needed=false" >> "$GITHUB_OUTPUT"
-            echo "Cloudflare manifest already points to ${RELEASE_TAG}."
+            echo "sync_needed_base=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare manifest already points to ${RELEASE_TAG}; fixed base package is ready."
           else
             echo "sync_needed=true" >> "$GITHUB_OUTPUT"
-            echo "Cloudflare manifest latest is '${deployed_latest}', need ${RELEASE_TAG}."
+            if [[ "$base_flash_ready" == "true" ]]; then
+              echo "sync_needed_base=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "sync_needed_base=true" >> "$GITHUB_OUTPUT"
+            fi
+            echo "Cloudflare manifest latest is '${deployed_latest}', base package ready: ${base_flash_ready}; need ${RELEASE_TAG}."
           fi
 
       - name: Download release OTA assets
         if: steps.manifest.outputs.sync_needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE_FLASH_TAG: v3.20a
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
@@ -433,7 +443,15 @@ jobs:
               --pattern "*.bin.ota" \
               --pattern "SHA256SUMS-*.txt" \
               --dir release-assets; then
-              exit 0
+              if [[ "${{ steps.manifest.outputs.sync_needed_base }}" != "true" ]]; then
+                exit 0
+              fi
+              if gh release download "${BASE_FLASH_TAG}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --pattern "*.flash.zip" \
+                --dir release-assets; then
+                exit 0
+              fi
             fi
             echo "GitHub Release asset download failed on attempt ${attempt}; retrying."
             sleep $((attempt * 5))
@@ -446,6 +464,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_ASSETS_DIR: release-assets
+          WEB_OTA_BASE_FLASH_TAG: v3.20a
           WEB_OTA_OUTPUT_DIR: web-ota-static
           WEB_OTA_SITE_URL: https://ds5dongle.xdfg.cc
           WEB_OTA_KEEP_RELEASES: "100"

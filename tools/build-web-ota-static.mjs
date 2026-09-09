@@ -10,6 +10,7 @@ const assetsDir = process.env.RELEASE_ASSETS_DIR || "release-assets";
 const siteUrl = trimSlash(process.env.WEB_OTA_SITE_URL || "https://ds5dongle.xdfg.cc");
 const repo = process.env.GITHUB_REPOSITORY || "mainlxl/ds5dongle-bl618-ota";
 const releaseTag = process.env.RELEASE_TAG || "";
+const baseFlashTag = process.env.WEB_OTA_BASE_FLASH_TAG || "v3.20a";
 const keepReleases = Number.parseInt(process.env.WEB_OTA_KEEP_RELEASES || "100", 10);
 
 if (!Number.isFinite(keepReleases) || keepReleases < 1) {
@@ -23,6 +24,7 @@ await copyStaticShell(sourceDir, outputDir);
 const previous = await fetchPreviousManifest(siteUrl);
 const previousReleases = previous.releases || [];
 const current = releaseTag ? await collectCurrentRelease(assetsDir, releaseTag) : null;
+const baseFlash = await collectOrRestoreBaseFlash(assetsDir, releaseTag, previous.base_flash);
 if (!current && previousReleases.length === 0) {
   throw new Error("No RELEASE_TAG provided and no previous manifest exists");
 }
@@ -44,6 +46,7 @@ const manifest = {
   generated_at: new Date().toISOString(),
   latest: releases[0]?.tag_name || releaseTag,
   keep_releases: keepReleases,
+  base_flash: baseFlash,
   releases,
 };
 await writeFile(
@@ -123,6 +126,69 @@ async function collectCurrentRelease(dir, tag) {
     tag_name: tag,
     name: tag,
     created_at: new Date().toISOString(),
+    assets,
+  };
+}
+
+async function collectOrRestoreBaseFlash(dir, tag, previousBaseFlash) {
+  if (tag === baseFlashTag) {
+    const files = await listFiles(dir);
+    const wantedNames = new Set([
+      `ds5dongle-lctech616-${baseFlashTag}.flash.zip`,
+      `ds5dongle-lctech616-${baseFlashTag}-hs.flash.zip`,
+    ]);
+    const wanted = files.filter((file) => wantedNames.has(path.basename(file)));
+    if (wanted.length !== wantedNames.size) {
+      throw new Error(`Fixed base flash package ${baseFlashTag} is incomplete`);
+    }
+    return copyBaseFlashFiles(wanted, baseFlashTag);
+  }
+
+  if (!previousBaseFlash?.tag_name || previousBaseFlash.tag_name !== baseFlashTag) {
+    throw new Error(`Fixed base flash package ${baseFlashTag} is missing from the previous static site`);
+  }
+
+  const baseDir = path.join(outputDir, "bootstrap");
+  await mkdir(baseDir, { recursive: true });
+  const restored = { ...previousBaseFlash, assets: [] };
+  for (const asset of previousBaseFlash.assets || []) {
+    if (!asset.browser_download_url || !asset.name) {
+      continue;
+    }
+    const relativeUrl = asset.browser_download_url.startsWith("/")
+      ? asset.browser_download_url
+      : new URL(asset.browser_download_url).pathname;
+    const target = path.join(baseDir, asset.name);
+    await download(`${siteUrl}${relativeUrl}`, target);
+    restored.assets.push({
+      ...asset,
+      browser_download_url: `/bootstrap/${asset.name}`,
+    });
+  }
+  if (restored.assets.length !== (previousBaseFlash.assets || []).length) {
+    throw new Error(`Fixed base flash package ${baseFlashTag} could not be restored`);
+  }
+  return restored;
+}
+
+async function copyBaseFlashFiles(files, tag) {
+  const baseDir = path.join(outputDir, "bootstrap");
+  await mkdir(baseDir, { recursive: true });
+  const assets = [];
+  for (const file of files.sort()) {
+    const name = path.basename(file);
+    const bytes = await readFile(file);
+    await writeFile(path.join(baseDir, name), bytes);
+    assets.push({
+      name,
+      size: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      browser_download_url: `/bootstrap/${name}`,
+    });
+  }
+  return {
+    tag_name: tag,
+    name: `固定底包 ${tag}`,
     assets,
   };
 }

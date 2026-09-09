@@ -45,4 +45,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web-ota-static --project-name ds5dongle-ota --commit-dirty=true
+          command: pages deploy web-ota-static --project-name ds5dongle-ota --branch master --commit-dirty=true

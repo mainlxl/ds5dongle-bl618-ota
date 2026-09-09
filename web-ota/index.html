@@ -444,7 +444,7 @@
 
         <div class="body">
           <p class="first-use-intro">
-            如果设备当前还是原作者固件，或网页提示无法进入 OTA 接收状态，请先下载完整刷机包，通过 UART/ISP 刷入一次；之后即可直接使用下面的在线 OTA。
+            如果设备当前还是原作者固件，或网页提示无法进入 OTA 接收状态，请先刷入固定底包 <strong id="base-flash-version">v3.20a</strong>，刷完后再进行下面的在线 OTA。
           </p>
 
           <section class="ota-area" aria-labelledby="ota-title">
@@ -529,11 +529,11 @@
             <div class="flash-tools">
               <a id="download-fs-flash" class="download-link" href="#" target="_blank" rel="noreferrer">
                 <strong>下载 Full-Speed 完整刷机包</strong>
-                <span id="download-fs-name">正在读取最新版本...</span>
+                <span id="download-fs-name">正在读取固定底包...</span>
               </a>
               <a id="download-hs-flash" class="download-link" href="#" target="_blank" rel="noreferrer">
                 <strong>下载 High-Speed 完整刷机包</strong>
-                <span id="download-hs-name">正在读取最新版本...</span>
+                <span id="download-hs-name">正在读取固定底包...</span>
               </a>
             </div>
             <ol class="flash-steps">
@@ -561,7 +561,6 @@
       const OTA_CMD_ABORT = 0x13;
       const OTA_CHUNK_SIZE = 59;
       const MANIFEST_URL = "manifest.json";
-      const RELEASE_REPO = "mainlxl/ds5dongle-bl618-ota";
 
       const OTA_STATUS = {
         0: "空闲",
@@ -579,6 +578,7 @@
       const state = {
         device: null,
         releases: [],
+        baseFlash: null,
         latestRelease: null,
         release: null,
         localFile: null,
@@ -606,6 +606,7 @@
         downloadHsFlash: $("#download-hs-flash"),
         downloadFsName: $("#download-fs-name"),
         downloadHsName: $("#download-hs-name"),
+        baseFlashVersion: $("#base-flash-version"),
         statusText: $("#status-text"),
         progressText: $("#progress-text"),
         progressBar: $("#progress-bar"),
@@ -837,6 +838,7 @@
         }
         const previousTag = state.release?.tag_name;
         state.releases = releases;
+        state.baseFlash = data.base_flash || null;
         state.latestRelease = releases.find((release) => release.tag_name === data.latest) || releases[0];
         els.release.replaceChildren(...releases.map((release) => {
           const option = document.createElement("option");
@@ -872,19 +874,28 @@
       }
 
       function updateFlashDownloads() {
-        const release = state.latestRelease;
-        if (!release) {
+        const baseFlash = state.baseFlash;
+        if (!baseFlash?.tag_name || !Array.isArray(baseFlash.assets)) {
           return;
         }
 
-        const tag = encodeURIComponent(release.tag_name);
-        const base = `https://github.com/${RELEASE_REPO}/releases/download/${tag}`;
-        const fsName = `ds5dongle-lctech616-${release.tag_name}.flash.zip`;
-        const hsName = `ds5dongle-lctech616-${release.tag_name}-hs.flash.zip`;
-        els.downloadFsFlash.href = `${base}/${encodeURIComponent(fsName)}`;
-        els.downloadHsFlash.href = `${base}/${encodeURIComponent(hsName)}`;
-        els.downloadFsName.textContent = `${fsName} · ${release.tag_name}`;
-        els.downloadHsName.textContent = `${hsName} · ${release.tag_name}`;
+        els.baseFlashVersion.textContent = baseFlash.tag_name;
+        const fsAsset = baseFlash.assets.find((asset) => asset.name.endsWith(".flash.zip") && !asset.name.includes("-hs."));
+        const hsAsset = baseFlash.assets.find((asset) => asset.name.endsWith("-hs.flash.zip"));
+        setFlashDownload(els.downloadFsFlash, els.downloadFsName, fsAsset, baseFlash.tag_name);
+        setFlashDownload(els.downloadHsFlash, els.downloadHsName, hsAsset, baseFlash.tag_name);
+      }
+
+      function setFlashDownload(link, label, asset, tag) {
+        if (!asset?.browser_download_url) {
+          link.removeAttribute("href");
+          link.setAttribute("aria-disabled", "true");
+          label.textContent = "固定底包暂未就绪";
+          return;
+        }
+        link.href = asset.browser_download_url;
+        link.removeAttribute("aria-disabled");
+        label.textContent = `${asset.name} · 固定底包 ${tag}`;
       }
 
       function updateSelectedAsset() {
