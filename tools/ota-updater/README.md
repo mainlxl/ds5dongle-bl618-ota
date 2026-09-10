@@ -13,9 +13,11 @@
 
 ## 下载运行
 
-- macOS：下载 `ds5dongle-ota-updater-macOS` artifact，解压后双击 `DS5Dongle OTA Updater.app`，不要直接双击裸二进制。
-- Windows：下载 `ds5dongle-ota-updater-Windows` artifact，运行 `.exe`，release 构建不会弹命令行窗口。
-- Linux：下载 `ds5dongle-ota-updater-Linux` artifact，可能需要给 HID 设备配置 udev 权限。
+- macOS Intel：下载 `ds5dongle-ota-updater-macOS-Intel` artifact，解压后双击 `DS5Dongle OTA Updater.app`。
+- macOS Apple Silicon：下载 `ds5dongle-ota-updater-macOS-Apple-Silicon` artifact，解压后双击 `DS5Dongle OTA Updater.app`。
+- Windows：下载 `ds5dongle-ota-updater-Windows` artifact，解压后运行 `.exe`，不会弹命令行窗口。
+
+GitHub Actions 编译：打开仓库的 **Actions → OTA Updater Build (Manual) → Run workflow**，可填写要编译的分支、tag 或 commit；留空使用 `master`。每次手动运行会生成 Windows、macOS Intel、macOS Apple Silicon 三个 artifact，并附 SHA256 文件。
 
 ## 本地运行
 

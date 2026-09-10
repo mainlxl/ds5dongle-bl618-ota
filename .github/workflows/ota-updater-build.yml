@@ -1,64 +1,94 @@
-name: OTA Updater Build
+name: OTA Updater Build (Manual)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-      - 'codex/**'
-    paths:
-      - 'tools/ota-updater/**'
-      - '.github/workflows/ota-updater-build.yml'
+    inputs:
+      ref:
+        description: "要编译的分支、tag 或 commit；默认 master"
+        required: false
+        default: master
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    name: Build ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - windows-latest
-          - ubuntu-latest
+        include:
+          - name: Windows
+            os: windows-latest
+            artifact: ds5dongle-ota-updater-Windows
+          - name: macOS Intel
+            os: macos-13
+            artifact: ds5dongle-ota-updater-macOS-Intel
+          - name: macOS Apple Silicon
+            os: macos-14
+            artifact: ds5dongle-ota-updater-macOS-Apple-Silicon
+
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libudev-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libxkbcommon-dev
+        with:
+          ref: ${{ inputs.ref || 'master' }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build
-        run: cargo build --release --manifest-path tools/ota-updater/Cargo.toml
+        run: cargo build --locked --release --manifest-path tools/ota-updater/Cargo.toml
 
       - name: Package macOS app
         if: runner.os == 'macOS'
         run: tools/ota-updater/package-macos.sh tools/ota-updater/dist
 
+      - name: Package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tools/ota-updater/dist | Out-Null
+          Compress-Archive `
+            -Path tools/ota-updater/target/release/ds5dongle-ota-updater.exe `
+            -DestinationPath tools/ota-updater/dist/ds5dongle-ota-updater-Windows.zip `
+            -Force
+
+      - name: Create macOS checksum
+        if: runner.os == 'macOS'
+        run: |
+          shasum -a 256 \
+            tools/ota-updater/dist/ds5dongle-ota-updater-macOS.app.zip \
+            > tools/ota-updater/dist/ds5dongle-ota-updater-macOS.app.zip.sha256
+
+      - name: Create Windows checksum
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $file = "tools/ota-updater/dist/ds5dongle-ota-updater-Windows.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+          "$hash  $(Split-Path -Leaf $file)" | Set-Content "$file.sha256"
+
       - name: Upload macOS artifact
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ds5dongle-ota-updater-macOS
-          path: tools/ota-updater/dist/ds5dongle-ota-updater-macOS.app.zip
-
-      - name: Upload Linux artifact
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ds5dongle-ota-updater-Linux
-          path: tools/ota-updater/target/release/ds5dongle-ota-updater
+          name: ${{ matrix.artifact }}
+          path: |
+            tools/ota-updater/dist/ds5dongle-ota-updater-macOS.app.zip
+            tools/ota-updater/dist/ds5dongle-ota-updater-macOS.app.zip.sha256
+          retention-days: 30
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ds5dongle-ota-updater-Windows
-          path: tools/ota-updater/target/release/ds5dongle-ota-updater.exe
+          name: ${{ matrix.artifact }}
+          path: |
+            tools/ota-updater/dist/ds5dongle-ota-updater-Windows.zip
+            tools/ota-updater/dist/ds5dongle-ota-updater-Windows.zip.sha256
+          retention-days: 30
