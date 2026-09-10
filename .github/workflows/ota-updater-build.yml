@@ -23,9 +23,6 @@ jobs:
           - name: Windows
             os: windows-latest
             artifact: ds5dongle-ota-updater-Windows
-          - name: macOS Intel
-            os: macos-15-intel
-            artifact: ds5dongle-ota-updater-macOS-Intel
           - name: macOS Apple Silicon
             os: macos-15
             artifact: ds5dongle-ota-updater-macOS-Apple-Silicon
