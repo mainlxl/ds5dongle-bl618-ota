@@ -8,6 +8,7 @@ import {
   REPORT_ID_VERSION,
   createDataCommands,
   inferSpeedFromVersion,
+  makeFeaturePayload,
   makeStartCommand,
   parseFirmwareVersion,
   parseOtaStatus,
@@ -113,6 +114,16 @@ test("creates start and sequenced data commands", () => {
   assert.equal(commands[0][3], OTA_CHUNK_SIZE);
   assert.equal(commands[1][1], 1);
   assert.equal(commands[1][3], 3);
+});
+
+test("supports short and 64-byte HID feature payloads", () => {
+  const command = Uint8Array.from([0x10, 0x34, 0x12, 0, 0]);
+  assert.deepEqual([...makeFeaturePayload(command, "short")], [...command]);
+
+  const padded = makeFeaturePayload(command, "padded64");
+  assert.equal(padded.length, 63);
+  assert.deepEqual([...padded.slice(0, command.length)], [...command]);
+  assert.equal(padded.slice(command.length).every((byte) => byte === 0), true);
 });
 
 test("parses checksum files and infers speed", () => {

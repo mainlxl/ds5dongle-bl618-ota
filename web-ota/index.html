@@ -561,6 +561,7 @@
       const OTA_CMD_ABORT = 0x13;
       const OTA_CHUNK_SIZE = 59;
       const MANIFEST_URL = "manifest.json";
+      const FEATURE_REPORT_MODES = ["short", "padded64"];
 
       const OTA_STATUS = {
         0: "空闲",
@@ -584,6 +585,7 @@
         localFile: null,
         currentVersion: "",
         previousVersion: "",
+        reportMode: null,
         updating: false,
         abortRequested: false,
       };
@@ -766,6 +768,38 @@
         return new Uint8Array([commandId]);
       }
 
+      function makeFeaturePayload(command, mode) {
+        const payload = new Uint8Array(mode === "padded64" ? 63 : command.length);
+        payload.set(command);
+        return payload;
+      }
+
+      function reportModeLabel(mode) {
+        return mode === "padded64" ? "64 字节补齐" : "短包";
+      }
+
+      async function sendOtaCommand(command, mode = state.reportMode) {
+        if (!mode) {
+          throw new Error("OTA HID 发送方式尚未确定");
+        }
+        try {
+          await state.device.sendFeatureReport(
+            REPORT_ID_CONFIG,
+            makeFeaturePayload(command, mode),
+          );
+        } catch (error) {
+          throw new Error(`WebHID 发送${reportModeLabel(mode)}命令失败：${error?.message || error}`);
+        }
+      }
+
+      async function receiveFeatureReport(reportId, description) {
+        try {
+          return await state.device.receiveFeatureReport(reportId);
+        } catch (error) {
+          throw new Error(`WebHID ${description}失败：${error?.message || error}`);
+        }
+      }
+
       function updateButtons() {
         const connected = Boolean(state.device?.opened);
         els.connect.disabled = state.updating;
@@ -806,7 +840,7 @@
 
       async function readVersion() {
         ensureDevice();
-        const report = await state.device.receiveFeatureReport(REPORT_ID_VERSION);
+        const report = await receiveFeatureReport(REPORT_ID_VERSION, "读取固件版本");
         const version = parseFirmwareVersion(report);
         state.currentVersion = version;
         els.currentVersion.textContent = version || "-";
@@ -923,6 +957,7 @@
         state.updating = true;
         state.abortRequested = false;
         state.previousVersion = state.currentVersion;
+        state.reportMode = null;
         updateButtons();
 
         try {
@@ -933,21 +968,17 @@
           setStatus("正在启动 OTA...");
           setProgress(0, packageBytes.length);
           log(`开始写入 OTA 包：${state.localFile?.name || asset.name}`);
-          await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeSimpleCommand(OTA_CMD_ABORT));
-          await sleep(80);
-          await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeStartCommand(packageBytes.length));
-          await sleep(150);
-          await ensureReceiveStarted(packageBytes.length);
+          await enterOtaReceive(packageBytes.length);
 
           let seq = 0;
           for (let offset = 0; offset < packageBytes.length; offset += OTA_CHUNK_SIZE) {
             if (state.abortRequested) {
-              await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeSimpleCommand(OTA_CMD_ABORT));
+              await sendOtaCommand(makeSimpleCommand(OTA_CMD_ABORT));
               throw new Error("OTA 已中止");
             }
 
             const chunk = packageBytes.slice(offset, offset + OTA_CHUNK_SIZE);
-            await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeDataCommand(seq, chunk));
+            await sendOtaCommand(makeDataCommand(seq, chunk));
             seq += 1;
 
             if (seq % 32 === 0 || offset + chunk.length >= packageBytes.length) {
@@ -959,7 +990,7 @@
 
           log("OTA 包写入成功，等待设备校验并切换分区", "success");
           setStatus("设备正在校验...");
-          await state.device.sendFeatureReport(REPORT_ID_CONFIG, makeSimpleCommand(OTA_CMD_FINISH));
+          await sendOtaCommand(makeSimpleCommand(OTA_CMD_FINISH));
           await waitForCompletion();
         } finally {
           state.updating = false;
@@ -1031,8 +1062,34 @@
         throw new Error(`设备没有进入 OTA 接收状态：${last?.label || "未知"}，接收 ${last?.received || 0} / ${last?.total || 0}`);
       }
 
+      async function enterOtaReceive(packageSize) {
+        const failures = [];
+        for (const mode of FEATURE_REPORT_MODES) {
+          try {
+            log(`尝试${reportModeLabel(mode)}发送 START`);
+            await sendOtaCommand(makeSimpleCommand(OTA_CMD_ABORT), mode);
+            await sleep(80);
+            await sendOtaCommand(makeStartCommand(packageSize), mode);
+            await sleep(150);
+            await ensureReceiveStarted(packageSize);
+            state.reportMode = mode;
+            log(`OTA 接收接口已确认：${reportModeLabel(mode)}`, "success");
+            return;
+          } catch (error) {
+            failures.push(`${reportModeLabel(mode)}：${error.message}`);
+            log(`${reportModeLabel(mode)}未进入 OTA 接收：${error.message}`, "warn");
+            try {
+              await sendOtaCommand(makeSimpleCommand(OTA_CMD_ABORT), mode);
+            } catch {
+              // The device may have rejected the report or disconnected.
+            }
+          }
+        }
+        throw new Error(`设备未进入 OTA 接收状态。${failures.join("；")}`);
+      }
+
       async function pollStatusOnce() {
-        const report = await state.device.receiveFeatureReport(REPORT_ID_STATUS);
+        const report = await receiveFeatureReport(REPORT_ID_STATUS, "读取 OTA 状态");
         const status = parseOtaStatus(report);
         if (status.total > 0) {
           setProgress(status.received, status.total);
@@ -1144,7 +1201,10 @@
       }
 
       updateButtons();
-      loadReleases().catch((error) => log(`错误：${error.message}`, "error"));
+      loadReleases().catch((error) => {
+        setStatus("在线 OTA 版本暂不可用，本地 OTA 仍可使用");
+        log(`在线 OTA 清单读取失败：${error.message}；本地 OTA 仍可使用`, "warn");
+      });
     </script>
   </body>
 </html>

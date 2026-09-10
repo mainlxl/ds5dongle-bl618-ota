@@ -145,6 +145,16 @@ export function makeSimpleCommand(commandId) {
   return new Uint8Array([commandId]);
 }
 
+export function makeFeaturePayload(command, mode = "short") {
+  const source = command instanceof Uint8Array ? command : new Uint8Array(command);
+  if (source.length > 63) {
+    throw new RangeError(`feature payload is ${source.length} bytes, max is 63`);
+  }
+  const payload = new Uint8Array(mode === "padded64" ? 63 : source.length);
+  payload.set(source);
+  return payload;
+}
+
 export function createDataCommands(packageBytes, chunkSize = OTA_CHUNK_SIZE) {
   const commands = [];
   let seq = 0;
