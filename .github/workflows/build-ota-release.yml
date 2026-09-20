@@ -7,6 +7,11 @@ on:
         description: "上游 Release tag；留空则同步 latest"
         required: false
         type: string
+      force_rebuild:
+        description: "重建并替换同名 Release；用于修复已发布的错误产物"
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - master
@@ -48,6 +53,7 @@ jobs:
         id: prepare
         env:
           REQUESTED_TAG: ${{ inputs.upstream_tag || '' }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || 'false' }}
         run: |
           set -euo pipefail
 
@@ -75,16 +81,19 @@ jobs:
 
           own_code="$(curl -LsS -o /dev/null -w "%{http_code}" \
             "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}")"
-          if [[ "$own_code" == "200" ]]; then
+          if [[ "$own_code" == "200" && "$FORCE_REBUILD" != "true" ]]; then
             echo "release_needed=false" >> "$GITHUB_OUTPUT"
             echo "release_commit=${release_commit}" >> "$GITHUB_OUTPUT"
             echo "tag=${tag}" >> "$GITHUB_OUTPUT"
             echo "safe_tag=${safe_tag}" >> "$GITHUB_OUTPUT"
             echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
-            echo "Release ${tag} already exists in ${GITHUB_REPOSITORY}; nothing to do."
+            echo "Release ${tag} already exists in ${GITHUB_REPOSITORY}; checking Cloudflare only."
             exit 0
           fi
-          if [[ "$own_code" != "404" ]]; then
+          if [[ "$own_code" == "200" ]]; then
+            echo "Force rebuild requested for existing Release ${tag}."
+          fi
+          if [[ "$own_code" != "200" && "$own_code" != "404" ]]; then
             echo "Unexpected status when checking own release page: HTTP ${own_code}"
             exit 1
           fi
@@ -140,6 +149,8 @@ jobs:
             "https://github.com/${UPSTREAM_REPO}.git" upstream-src
 
       - name: Inject OTA overlay
+        env:
+          OTA_FIRMWARE_VERSION: ${{ needs.prepare.outputs.tag }}
         run: |
           bash ota-overlay/tools/apply-ota-patches.sh upstream-src
 
@@ -180,6 +191,18 @@ jobs:
 
           src_stem="ds5dongle-lctech616${speed_suffix}"
           dist_stem="ds5dongle-lctech616-${RELEASE_TAG}${speed_suffix}"
+
+          expected_version="${RELEASE_TAG#v}"
+          expected_firmware="LCT616-DS5 ${expected_version}"
+          if [[ "$USB_SPEED" == "hs" ]]; then
+            expected_firmware="${expected_firmware}H"
+          fi
+          if ! strings -a "${src_dir}/${src_stem}.bin" | grep -Fq "$expected_firmware"; then
+            echo "Firmware version mismatch: expected '${expected_firmware}' in ${src_dir}/${src_stem}.bin" >&2
+            strings -a "${src_dir}/${src_stem}.bin" | grep -E '^(LCT616|BL618|M0S)-DS5 ' || true
+            exit 1
+          fi
+          echo "Firmware version verified: ${expected_firmware}"
 
           cp "${src_dir}/${src_stem}.bin" "${dist_dir}/${dist_stem}.bin"
           ota_src="${src_dir}/${src_stem}.bin.ota"
@@ -273,10 +296,17 @@ jobs:
           own_code="$(curl -LsS -o /dev/null -w "%{http_code}" \
             "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}")"
           if [[ "$own_code" == "200" ]]; then
-            echo "Release ${RELEASE_TAG} already exists; skip publish."
-            exit 0
+            echo "Replacing existing Release ${RELEASE_TAG}."
+            gh release delete "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag
+            for attempt in {1..10}; do
+              if ! git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+                break
+              fi
+              echo "Waiting for old tag ${RELEASE_TAG} to disappear (attempt ${attempt})."
+              sleep 2
+            done
           fi
-          if [[ "$own_code" != "404" ]]; then
+          if [[ "$own_code" != "200" && "$own_code" != "404" ]]; then
             echo "Unexpected status when checking own release page: HTTP ${own_code}"
             exit 1
           fi

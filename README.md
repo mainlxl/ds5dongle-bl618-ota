@@ -13,7 +13,7 @@
 
 `.github/workflows/build-ota-release.yml` 每小时检查一次上游最新 Release。
 
-也可以在 GitHub Actions 页面手动运行 `Build OTA Release`：`upstream_tag` 留空会同步上游 latest，填写指定 tag 会同步对应上游版本。如果本仓库已有同名 Release，任务只会检查并修复 Cloudflare 静态 OTA，不会覆盖已有 Release。
+也可以在 GitHub Actions 页面手动运行 `Build OTA Release`：`upstream_tag` 留空会同步上游 latest，填写指定 tag 会同步对应上游版本。需要修复已经发布的产物时，将 `force_rebuild` 设为 `true`，任务会重新编译、替换同名 Release，并重新部署 Cloudflare 静态 OTA。
 
 如果本仓库还没有同名 Release，Action 会：
 

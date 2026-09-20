@@ -152,6 +152,26 @@ insert_after_f6_command_var() {
     rm -f "$snippet_file"
 }
 
+set_firmware_version() {
+    local version="${OTA_FIRMWARE_VERSION#v}"
+    [[ -n "$version" ]] || return 0
+    [[ "$version" =~ ^[0-9][0-9A-Za-z._-]*$ ]] || die "invalid OTA_FIRMWARE_VERSION: ${version}"
+
+    rewrite_with_awk src/usb_gamepad.c "upstream firmware version" '
+        /^[[:space:]]*#define[[:space:]]+FIRMWARE_VERSION[[:space:]]+"LCT616-DS5 / {
+            if ($0 ~ /H"[[:space:]]*$/) {
+                print "    #define FIRMWARE_VERSION \"LCT616-DS5 " version "H\""
+            } else {
+                print "    #define FIRMWARE_VERSION \"LCT616-DS5 " version "\""
+            }
+            replaced++
+            next
+        }
+        { print }
+        END { if (replaced != 2) exit 42 }
+    ' -v version="$version"
+}
+
 copy_ota_sources() {
     mkdir -p src
     install -m 0644 "${OTA_OVERLAY_DIR}/src/ota_update.c" src/ota_update.c
@@ -236,5 +256,6 @@ require_file "${OTA_OVERLAY_DIR}/src/ota_update.h"
 
 copy_ota_sources
 ensure_cmake_hooks
+set_firmware_version
 ensure_usb_gamepad_hooks
 verify_ota_integration
